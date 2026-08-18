@@ -6,7 +6,7 @@
 
 import PackageDescription
 
-let version = "0.1.0"
+let version = "0.1.1"
 
 let package = Package(
     name: "AppKitPlus",
@@ -20,7 +20,7 @@ let package = Package(
         .binaryTarget(
             name: "AppKitPlus",
             url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release/releases/download/\(version)/AppKitPlus.xcframework.zip",
-            checksum: "b77d301e73a6ae2bd47bad1f5e157c22440d308afb84ea2208b34a7d65856612"
+            checksum: "ab3033379d98d027a9e4f1e3ba576037674626adbd09d37cfa79796df66dd192"
         ),
     ]
 )
