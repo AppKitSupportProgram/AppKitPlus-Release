@@ -1,0 +1,29 @@
+AppKitPlus — third-party notices
+================================
+
+AppKitPlus itself is licensed under the MIT License (see LICENSE). The distributed
+`AppKitPlus.xcframework` statically incorporates the following third-party code, which carries a
+different license.
+
+--------------------------------------------------------------------------------
+OpenSoftLinking
+--------------------------------------------------------------------------------
+
+Source:  https://github.com/MxIris-Reverse-Engineering/OpenSoftLinking
+License: GNU Lesser General Public License, version 2.1 (LGPL-2.1)
+
+OpenSoftLinking provides the soft-linking macros AppKitPlus uses to resolve private AppKit classes
+that export no linkable symbol. Its macro suite is derived from WebKit's
+`Source/WTF/wtf/cocoa/SoftLinking.h`:
+
+    Source:  https://github.com/WebKit/WebKit
+    License: GNU Lesser General Public License, version 2.1 (LGPL-2.1)
+
+AppKitPlus vendors these files with two mechanical changes: include paths are quoted rather than
+framework-style, and the `_osl_dlopen` / `_osl_dlopen_audited` helpers carry hidden visibility.
+
+The complete corresponding source for this component is publicly available at the URL above. The
+LGPL-2.1 license text is available at https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+
+Anyone wishing to modify or relink this component should build AppKitPlus against their own copy;
+requests for object files may be directed to the repository's issue tracker.
