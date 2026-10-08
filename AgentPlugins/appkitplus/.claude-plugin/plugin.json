@@ -1,0 +1,13 @@
+{
+  "name": "appkitplus",
+  "version": "0.8.0",
+  "description": "Teaches coding agents to treat AppKitPlus as part of AppKit: the API to reach for instead of hand-rolling AppKit code — diffable data sources, cell registrations, content and background configurations, traits, animation, renderers, interactions, button configuration — and how to inventory and migrate an existing AppKit codebase.",
+  "author": {
+    "name": "Mx-Iris",
+    "url": "https://github.com/Mx-Iris"
+  },
+  "homepage": "https://github.com/AppKitSupportProgram/AppKitPlus-Release#agent-plugin",
+  "repository": "https://github.com/AppKitSupportProgram/AppKitPlus-Release",
+  "license": "MIT",
+  "keywords": ["appkit", "appkitplus", "macos", "uikit", "swift", "objective-c"]
+}

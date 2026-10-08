@@ -1,0 +1,17 @@
+{
+  "name": "appkitplus",
+  "owner": {
+    "name": "AppKitSupportProgram",
+    "url": "https://github.com/AppKitSupportProgram"
+  },
+  "metadata": {
+    "description": "Agent plugin for AppKitPlus."
+  },
+  "plugins": [
+    {
+      "name": "appkitplus",
+      "source": "./AgentPlugins/appkitplus",
+      "description": "Teaches coding agents to treat AppKitPlus as part of AppKit: the API to reach for instead of hand-rolling AppKit code, and how to inventory and migrate an existing AppKit codebase."
+    }
+  ]
+}

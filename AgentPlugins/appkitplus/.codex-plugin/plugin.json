@@ -1,0 +1,28 @@
+{
+  "name": "appkitplus",
+  "version": "0.8.0",
+  "description": "Teaches coding agents to treat AppKitPlus as part of AppKit: the API to reach for instead of hand-rolling AppKit code — diffable data sources, cell registrations, content and background configurations, traits, animation, renderers, interactions, button configuration — and how to inventory and migrate an existing AppKit codebase.",
+  "author": {
+    "name": "Mx-Iris",
+    "url": "https://github.com/Mx-Iris"
+  },
+  "homepage": "https://github.com/AppKitSupportProgram/AppKitPlus-Release#agent-plugin",
+  "repository": "https://github.com/AppKitSupportProgram/AppKitPlus-Release",
+  "license": "MIT",
+  "keywords": ["appkit", "appkitplus", "macos", "uikit", "swift", "objective-c"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "AppKitPlus",
+    "shortDescription": "Modern AppKit code on AppKitPlus",
+    "longDescription": "The appkit-app-modernization skill, for projects that depend on AppKitPlus. For new code it names the AppKitPlus API to use instead of the hand-written AppKit pattern — NSOutlineViewDiffableDataSource and cell registrations instead of data source plumbing, NSListContentConfiguration and NSBackgroundConfiguration instead of cell subclasses, traits instead of appearance notifications, NSView.animate, graphics renderers, drag, drop, hover and cursor interactions, NSAction and NSButton.Configuration. For existing code it inventories what could migrate, area by area, before changing anything. Requires the AppKitPlus package (AppKitSupportProgram/AppKitPlus-Release); the plugin version matches the AppKitPlus release it describes.",
+    "developerName": "Mx-Iris",
+    "category": "Developer Tools",
+    "capabilities": ["Read"],
+    "websiteURL": "https://github.com/AppKitSupportProgram/AppKitPlus-Release",
+    "defaultPrompt": [
+      "Does AppKitPlus already have an API for this AppKit code?",
+      "Inventory this AppKit project for AppKitPlus migration",
+      "Replace this NSOutlineViewDataSource with a diffable data source"
+    ]
+  }
+}
