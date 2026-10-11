@@ -369,6 +369,62 @@ Objective-C: `-[NSFilterSearchFieldDelegate menuForFilterSearchField:]`,
 token field delegate's parsing, display strings and completion popover with token types and the two
 delegate methods; drop hand-kept recent filters for `recentFiltersEnabled` and `encodedState`.
 
+## Filter bar — `NSFilterControlBar` (0.10.0+)
+
+The bar at the bottom of an Xcode navigator: a filter field across the middle and buttons on either side
+of it — pull-down menus, or buttons that send an action — sized together by one `controlSize`. Under the macOS 26 design, from macOS 27, at
+`.large` and `.extraLarge` the field and each button sit on their own capsule of interactive Liquid Glass,
+as in Xcode 27. The field is an `NSFilterSearchField` until you set another — an `NSFilterTokenField` or
+any `NSTextField`.
+
+**Replaces**: a hand-built bar under a sidebar or list — a search field and menu or action buttons laid out by
+frame or constraints, the field's height and insets picked per control size; an `NSGlassEffectView`
+wrapped around a search field by hand.
+
+```bash
+rg -n -e 'NSGlassEffectView' -e 'pullsDown' -e 'pullDownButton' -e 'addBottomAlignedAccessoryViewController'
+```
+
+```swift
+let optionsMenu = NSMenu(title: "Filter Options")
+optionsMenu.addItem(withTitle: "Show Only Recent Files", action: #selector(toggleRecentFiles(_:)), keyEquivalent: "")
+let optionsItem = NSFilterControlBarItem(
+    image: NSImage(systemSymbolName: "line.3.horizontal.decrease.circle", accessibilityDescription: nil),
+    menu: optionsMenu)
+optionsItem.toolTip = "Filter Options"
+let clearItem = NSFilterControlBarItem(              // no menu: pressing it sends the action
+    image: NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: nil),
+    target: self, action: #selector(clearFilter(_:)))
+clearItem.toolTip = "Clear Filter"
+
+let filterBar = NSFilterControlBar(frame: .zero)
+filterBar.controlSize = .large                       // Xcode's navigators; glass from macOS 27
+filterBar.leadingItems = [optionsItem]
+filterBar.trailingItems = [clearItem]                // after the field
+filterBar.filterField.target = self
+filterBar.filterField.action = #selector(filterChanged(_:))
+
+// At the bottom of a sidebar, with the list fading out under it as in Xcode:
+let accessory = NSSplitViewItemAccessoryViewController()
+accessory.view = filterBar
+accessory.preferredScrollEdgeEffectStyle = .soft    // macOS 26.1
+sidebarItem.addBottomAlignedAccessoryViewController(accessory)
+```
+
+Each `NSFilterControlBarItem` shows its `image` and pops its whole `menu` up when pressed; a menu of a
+single item performs that item instead. An item without a menu sends its `action` to its `target`, from
+the bar's button — show a popover from the sender. Items lay out in array order — the first leading item outermost,
+the first trailing item next to the field — and swap sides in a right-to-left layout. The bar sets the
+field's `controlSize` and frame, and its own intrinsic height follows: 44 points at `.large` under the
+macOS 26 design. While the field is on glass the bar keeps the filter field's background and border off;
+configure everything else — target and action, delegate, filter buttons — on the field directly.
+Objective-C: `-[NSFilterControlBarItem initWithImage:menu:]`, `-[NSFilterControlBarItem initWithImage:target:action:]`,
+`NSFilterControlBar.filterField`.
+
+**Adopting**: delete the hand-made bar view, its layout and per-size metrics, and any glass wrapped around
+the field; move each menu button's menu, or each plain button's target and action, into an
+`NSFilterControlBarItem`.
+
 ## Closure actions — `NSAction`
 
 **Replaces**: `target = self` / `action = #selector(…)` with an `@objc` handler method per control;
