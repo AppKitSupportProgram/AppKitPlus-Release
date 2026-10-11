@@ -412,7 +412,9 @@ sidebarItem.addBottomAlignedAccessoryViewController(accessory)
 ```
 
 Each `NSFilterControlBarItem` shows its `image` and pops its whole `menu` up when pressed; a menu of a
-single item performs that item instead. An item without a menu sends its `action` to its `target`, from
+single item performs that item instead. A symbol image is sized to the field's symbols and keeps its
+hierarchical or palette colours (0.10.1+) — an item has no tint, so swap in an accent-coloured symbol
+to show that a filter it controls is on. An item without a menu sends its `action` to its `target`, from
 the bar's button — show a popover from the sender. Items lay out in array order — the first leading item outermost,
 the first trailing item next to the field — and swap sides in a right-to-left layout. The bar sets the
 field's `controlSize` and frame, and its own intrinsic height follows: 44 points at `.large` under the
