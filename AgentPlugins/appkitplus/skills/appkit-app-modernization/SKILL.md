@@ -1,6 +1,6 @@
 ---
 name: appkit-app-modernization
-description: Use when writing, reviewing or migrating AppKit UI code in a project that depends on AppKitPlus (`import AppKitPlus`, AppKitPlus-Release) — use its API instead of hand-rolling, and inventory legacy code for migration. Covers NSOutlineViewDiffableDataSource, NSTableViewDiffableReorderableDataSource, NSBrowserDiffableDataSource, cell registrations, NSListContentConfiguration, NSBackgroundConfiguration, NSViewAccessory, NSAction and control events, NSButton.Configuration, NSView.animate, NSTraitCollection, NSLayerBackedView, NSContentUnavailableConfiguration, NSTableViewController and the other list and scroll controllers, NSHostingConfiguration, updateProperties, NSGraphicsImageRenderer, UIKit-style NSBezierPath and UIGeometry helpers, NSEffectView, NSNavigationController, drag and drop interactions, NSCursorInteraction, NSHoverAppearanceInteraction, NSScrollBehavior, NSScrollPagingInteraction, NSPasteboard accessors, NSDeferredMenuItem, NSPopUpPathControl, NSModernDrawer, NSDocumentController.launchOptions.
+description: Use when writing, reviewing or migrating AppKit UI code in a project that depends on AppKitPlus (`import AppKitPlus`, AppKitPlus-Release) — use its API instead of hand-rolling, and inventory legacy code for migration. Covers NSOutlineViewDiffableDataSource, NSTableViewDiffableReorderableDataSource, NSBrowserDiffableDataSource, cell registrations, NSListContentConfiguration, NSBackgroundConfiguration, NSViewAccessory, NSAction, control events, NSButton.Configuration, NSView.animate, NSTraitCollection, NSLayerBackedView, NSContentUnavailableConfiguration, NSTableViewController and the other list and scroll controllers, NSHostingConfiguration, updateProperties, NSGraphicsImageRenderer, UIKit-style NSBezierPath and UIGeometry helpers, NSEffectView, NSNavigationController, drag and drop interactions, NSCursorInteraction, NSHoverAppearanceInteraction, NSScrollBehavior, NSScrollPagingInteraction, NSPasteboard accessors, NSDeferredMenuItem, NSPopUpPathControl, NSFilterSearchField, NSFilterTokenField, NSModernDrawer.
 ---
 
 # Modernising an AppKit App with AppKitPlus
@@ -29,7 +29,7 @@ The version is the `AppKitPlus-Release` pin in `Package.resolved`. New dependenc
 release, which is the release this skill describes:
 
 ```swift
-.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.8.0")
+.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.9.0")
 // target dependency: .product(name: "AppKitPlus", package: "AppKitPlus-Release")
 ```
 
@@ -117,7 +117,7 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | `viewDidChangeEffectiveAppearance`; accessibility display, key/main window, screen and backing-scale notifications; walking up to the enclosing table for its style | `traitCollection` + `registerForTraitChanges` | [view-environment](references/view-environment.md) |
 | environment values pushed down the view tree by hand | a custom `NSTraitDefinition` + `traitOverrides` | view-environment |
 | `perform(_:with:afterDelay: 0)` coalescing, `withObservationTracking` loops, `didSet { updateUI() }` | `updateProperties()` + `setNeedsUpdateProperties()` | view-environment |
-| `wantsLayer = true` boilerplate, first-layout / first-appear flags, per-container padding properties | `NSLayerBackedView`, `NSLayerBackedViewController`; layout margins | view-environment |
+| `wantsLayer = true` boilerplate, first-layout / first-appear flags, per-container padding properties | `NSLayerBackedView`, `NSLayerBackedViewController`; `NSLayerBackedControl`, `NSLayerBackedTableCellView`, `NSLayerBackedCollectionViewItem` (0.9.0+); layout margins | view-environment |
 | centre arithmetic, `layer?.setAffineTransform`, `addSubview(_:positioned:relativeTo:)` | `center`, `transform`, `contentMode`, `bringSubview(toFront:)`, `insertSubview(_:aboveSubview:)` | view-environment |
 | `NSVisualEffectView` / `NSGlassEffectView` behind `#available` branches | `NSEffectView` + `NSVisualEffect` / `NSGlassEffect` | view-environment |
 | a container that swaps its own backdrop view per style; a backdrop no stock effect covers | an `NSEffect` subclass + `NSEffectHandler` (`import AppKitPlus.NSEffectSubclass`), shown through `NSEffectView` | view-environment |
@@ -140,6 +140,8 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | snapping driven by `momentumPhase` or `didEndLiveScrollNotification` | `NSScrollBehaviorInteraction` + `NSScrollBehavior` | interactions-and-controls |
 | async menu loading in `menuNeedsUpdate` with a "Loading…" item | `NSDeferredMenuItem` | interactions-and-controls |
 | an `NSPathControl` with `pathStyle = .popUp` or a menu built per component; a breadcrumb of pop-up buttons rebuilt by hand when the selection changes | `NSPopUpPathControl` + `NSPopUpPathItem` on the model objects (0.8.0+) | interactions-and-controls |
+| an `NSSearchField` with toggle buttons or a spinner laid over it; a hand-drawn "filter is on" background; a match count drawn next to the text | `NSFilterSearchField` (`addFilterButton(with:…)`, `progress`, `numberOfMatches`) (0.9.0+) | interactions-and-controls |
+| an `NSTokenField` whose delegate parses `key:value` text into model objects, draws its own tokens, builds a completion popover, or saves recent filters | `NSFilterTokenField` + `NSFilterToken` / `NSFilterTokenType` (0.9.0+) | interactions-and-controls |
 | `target = self` / `action = #selector(…)` per control; closure trampolines | `NSAction` (`addAction`, `primaryAction`) | interactions-and-controls |
 | a second target or a block per control event — a hand-kept target list, a trampoline per `mouseDown` / `mouseUp` override | `NSControl.addAction(_:for:)` and the rest of `UIControl`'s event-handler API (0.7.0+) | interactions-and-controls |
 | imperative button styling (`bezelStyle`, `setButtonType`, `bezelColor`, `NSButtonCell` subclasses) | `NSButton.Configuration` | interactions-and-controls |

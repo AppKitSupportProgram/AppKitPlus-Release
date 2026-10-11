@@ -294,6 +294,81 @@ Objective-C: `-[NSPopUpPathControlDelegate popUpPathControl:didSelectItem:]`, `-
 **Adopting**: delete the per-click menu assembly and the breadcrumb rebuilding; let the model objects
 adopt `NSPopUpPathItem`.
 
+## Filter fields — `NSFilterSearchField`, `NSFilterTokenField` (0.9.0+)
+
+The filter fields of Xcode's navigators and debug console. `NSFilterSearchField` is a search field with
+a filter icon and filter toggle buttons at its trailing end; the whole field turns active while any
+filter is on, and it shows a spinner or a match count. `NSFilterTokenField` turns `kind:error` into a
+two-part token whose key opens a menu to change its type or comparison; with two or more tokens a
+capsule on the filter icon switches between matching all and any; completions pop up as you type,
+sectioned by type; the icon's menu keeps recent and sample filters; the whole filter saves to data and
+comes back from it.
+
+**Replaces**: an `NSSearchField` with toggle buttons or a progress indicator laid over it, a hand-drawn
+"filter is on" background, a match count drawn beside the text; an `NSTokenField` whose delegate parses
+`key:value` strings into model objects, draws its own tokens, builds a completion popover by hand, or
+saves recent filters to user defaults.
+
+```bash
+rg -n -e 'NSSearchField' -e 'NSTokenField' -e 'searchMenuTemplate' -e 'representedObjectForEditingString' -e 'completionsForSubstring' -e 'tokenField\('
+```
+
+```swift
+let searchField = NSFilterSearchField()
+searchField.delegate = self                                   // menu(for:) gives the filter icon a menu
+let recentButton = searchField.addFilterButton(
+    with: NSImage(systemSymbolName: "clock", accessibilityDescription: nil)!,
+    alternateImage: NSImage(systemSymbolName: "clock.fill", accessibilityDescription: nil),
+    toolTip: "Show Only Recent Files",
+    accessibilityLabel: "Recent Files")
+recentButton.target = self
+recentButton.action = #selector(toggleRecentFiles(_:))
+searchField.progress = NSFilterFieldProgressIndeterminate     // while filtering in the background
+searchField.numberOfMatches = matches.count                   // -1 hides it
+
+let messageType = NSFilterTokenType(identifier: "message", title: "Message")
+let kindType = NSFilterTokenType(identifier: "kind", title: "Kind")
+let isType = NSFilterTokenComparisonType(identifier: "is", title: "is", exclusion: false)
+let isNotType = NSFilterTokenComparisonType(identifier: "isNot", title: "is not", exclusion: true)
+let tokenField = NSFilterTokenField()
+tokenField.tokenTypes = [messageType, kindType]
+tokenField.comparisonTypes = [isType, isNotType]
+tokenField.defaultTokenType = messageType                     // free text becomes a Message token
+tokenField.defaultComparisonType = isType
+tokenField.recentFiltersEnabled = true
+tokenField.delegate = self
+
+func filterTokenFieldDidChangeFilter(_ tokenField: NSFilterTokenField) {
+    applyFilter(tokens: tokenField.filterTokens, text: tokenField.editingString, combining: tokenField.globalOperator)
+}
+
+func filterTokenField(_ tokenField: NSFilterTokenField, completionsFor string: String) async -> [NSFilterToken]? {
+    await messageIndex.completions(matching: string)
+}
+
+UserDefaults.standard.set(tokenField.encodedState, forKey: "consoleFilter")
+try tokenField.restoreState(from: savedState)
+```
+
+Typing `kind:error` makes a `KIND error` token, `kind!:error` the excluding one, and the other words
+join into a token of `defaultTokenType`; implement `filterTokenField(_:tokensFor:)` to parse text your
+own way. Tokens are immutable values: set `filterTokens` to change them. The delegate hears each change
+of the filter once — typed text after a 0.2-second pause. `operatorDisplayMode`, `defaultGlobalOperator`
+and `globalOperatorThreshold` tune the all / any capsule; `sampleFilterTokens` and
+`additionalIconMenuItems` fill the icon's menu; `presentsPopUpsAboveField = false` opens the completion
+list and the menu below the field. Both fields have `addFilterButton(with:alternateImage:toolTip:accessibilityLabel:)`,
+`progress`, `borderDisplayMode`, and take `drawsBackground` with `backgroundColor` as a fill of your own. Both take
+every `controlSize`, `.mini` through `.extraLarge`, as `NSSearchField` does — the icon, the buttons, the tokens and the
+completion list follow it, and the token field is as tall as a search field of the same size.
+Objective-C: `-[NSFilterSearchFieldDelegate menuForFilterSearchField:]`,
+`-[NSFilterTokenFieldDelegate filterTokenFieldDidChangeFilter:]`,
+`-filterTokenField:completionsForString:completionHandler:`, `-filterTokenField:tokensForString:`,
+`-[NSFilterTokenField restoreStateFromData:error:]`.
+
+**Adopting**: delete the overlay buttons, the background drawing and the match-count label; replace the
+token field delegate's parsing, display strings and completion popover with token types and the two
+delegate methods; drop hand-kept recent filters for `recentFiltersEnabled` and `encodedState`.
+
 ## Closure actions — `NSAction`
 
 **Replaces**: `target = self` / `action = #selector(…)` with an `@objc` handler method per control;

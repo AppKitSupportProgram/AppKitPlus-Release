@@ -124,14 +124,16 @@ three members exist on `NSView`. Objective-C: `-setNeedsUpdateProperties`, `-upd
 wherever a non-observable input changes, and delete the coalescing and tracking machinery. On macOS
 12 and 13, call `setNeedsUpdateProperties()` for observable inputs too.
 
-## Layer-backed base classes — `NSLayerBackedView`, `NSLayerBackedViewController`
+## Layer-backed base classes — `NSLayerBackedView`, `NSLayerBackedViewController` and their variants
 
 A view already set up for layer-backed drawing, and a view controller with first-layout and
-first-appearance hooks.
+first-appearance hooks — plus the same members on the system classes that cannot inherit from them:
+`NSLayerBackedControl`, `NSLayerBackedTableCellView` and `NSLayerBackedCollectionViewItem`.
 
 **Replaces**: `wantsLayer = true` + `layerContentsRedrawPolicy = .onSetNeedsDisplay` in every
-initialiser; `didLayoutOnce` / `hasAppeared` flags; `loadView() { view = NSView(); view.wantsLayer = true }`;
-per-container `contentInsets` / `padding` properties used as constraint constants.
+initialiser, a control's or a table cell view's included; `didLayoutOnce` / `hasAppeared` flags, an
+item's included; `loadView() { view = NSView(); view.wantsLayer = true }`; per-container
+`contentInsets` / `padding` properties used as constraint constants.
 
 ```bash
 rg -n -e 'wantsLayer\s*=\s*true' -e 'layerContentsRedrawPolicy' \
@@ -156,18 +158,35 @@ final class DetailViewController: NSLayerBackedViewController {
 // Writable layout margins that drive layoutMarginsGuide.
 cardView.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
 titleLabel.leadingAnchor.constraint(equalTo: cardView.layoutMarginsGuide.leadingAnchor).isActive = true
+
+// A control: NSControl + its cell as before, with the same members as NSLayerBackedView.
+final class RatingControl: NSLayerBackedControl {
+    override class var cellClass: AnyClass? { get { RatingCell.self } set {} }
+}
+
+// A collection view item: the same hooks as NSLayerBackedViewController.
+final class PhotoItem: NSLayerBackedCollectionViewItem {
+    override func viewDidFirstLayout() { super.viewDidFirstLayout(); configureThumbnailSize() }
+}
 ```
 
 `NSLayerBackedView`: `layerClass`, `userInteractionEnabled`, `sizeThatFits(_:)`,
 `layoutMargins`, `directionalLayoutMargins`, `preservesSuperviewLayoutMargins`,
-`insetsLayoutMarginsFromSafeArea`, `layoutMarginsDidChange()`. `NSLayerBackedViewController`:
+`insetsLayoutMarginsFromSafeArea`, `layoutMarginsDidChange()`.
+`NSLayerBackedControl` (0.9.0+) and `NSLayerBackedTableCellView` (0.9.0+): the same members
+on an `NSControl` and an `NSTableCellView`. `NSLayerBackedViewController`:
 `viewClass`, `layerBackedView`, `viewWillFirstLayout` / `viewDidFirstLayout`,
-`viewWillFirstAppear` / `viewDidFirstAppear`, `viewSafeAreaInsetsDidChange`. `viewClass` is typed
+`viewWillFirstAppear` / `viewDidFirstAppear`, `viewSafeAreaInsetsDidChange`, and the same members on an
+`NSCollectionViewItem` through `NSLayerBackedCollectionViewItem` (0.9.0+). `viewClass` is typed
 `any NSLayerBackedViewProtocol.Type` (0.8.0+); up to 0.7.0 it is `AnyClass`.
 
 **Adopting**: change the superclass, move drawing into `updateLayer()`, and delete the layer setup and
 the once-flags. A view that must keep drawing in `draw(_:)` overrides `wantsUpdateLayer` to return
-`false`.
+`false`. A control changes `NSControl` to `NSLayerBackedControl` and keeps drawing through its cell —
+nothing to override. A table cell view changes `NSTableCellView` to `NSLayerBackedTableCellView`; its
+`directionalLayoutMargins` keep laying out content configuration as before. An item changes
+`NSCollectionViewItem` to `NSLayerBackedCollectionViewItem` and drops its own `loadView()` when that
+only built a container view.
 
 ## Geometry and hierarchy on `NSView`
 
