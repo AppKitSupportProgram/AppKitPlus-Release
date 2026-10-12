@@ -29,7 +29,7 @@ The version is the `AppKitPlus-Release` pin in `Package.resolved`. New dependenc
 release, which is the release this skill describes:
 
 ```swift
-.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.10.2")
+.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.11.0")
 // target dependency: .product(name: "AppKitPlus", package: "AppKitPlus-Release")
 ```
 

@@ -387,6 +387,7 @@ rg -n -e 'NSGlassEffectView' -e 'pullsDown' -e 'pullDownButton' -e 'addBottomAli
 
 ```swift
 let optionsMenu = NSMenu(title: "Filter Options")
+optionsMenu.addItem(withTitle: "", action: nil, keyEquivalent: "")   // item 0: the pull-down's face, not listed
 optionsMenu.addItem(withTitle: "Show Only Recent Files", action: #selector(toggleRecentFiles(_:)), keyEquivalent: "")
 let optionsItem = NSFilterControlBarItem(
     image: NSImage(systemSymbolName: "line.3.horizontal.decrease.circle", accessibilityDescription: nil),
@@ -411,8 +412,10 @@ accessory.preferredScrollEdgeEffectStyle = .soft    // macOS 26.1
 sidebarItem.addBottomAlignedAccessoryViewController(accessory)
 ```
 
-Each `NSFilterControlBarItem` shows its `image` and pops its whole `menu` up when pressed; a menu of a
-single item performs that item instead. A symbol image is sized to the field's symbols and keeps its
+Each `NSFilterControlBarItem` shows its `image` and pops its `menu` up when pressed as a pull-down
+`NSPopUpButton` does (0.11.0+): below the button, or above it when there is no room below, and
+without item 0, the pull-down's face — so start the menu with an empty item, or its first entry goes
+missing. A menu of a single item performs that item instead. A symbol image is sized to the field's symbols and keeps its
 hierarchical or palette colours (0.10.1+) — an item has no tint, so swap in an accent-coloured symbol
 to show that a filter it controls is on. An item without a menu sends its `action` to its `target`, from
 the bar's button — show a popover from the sender. Items lay out in array order — the first leading item outermost,
@@ -425,7 +428,8 @@ Objective-C: `-[NSFilterControlBarItem initWithImage:menu:]`, `-[NSFilterControl
 
 **Adopting**: delete the hand-made bar view, its layout and per-size metrics, and any glass wrapped around
 the field; move each menu button's menu, or each plain button's target and action, into an
-`NSFilterControlBarItem`.
+`NSFilterControlBarItem`. A pull-down `NSPopUpButton`'s menu already starts with its face; a menu
+popped up by hand needs one put in front.
 
 ## Closure actions — `NSAction`
 
