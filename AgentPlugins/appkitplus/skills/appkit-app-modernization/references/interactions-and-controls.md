@@ -448,6 +448,83 @@ read `stringValue`; store recent queries as property lists and title them with
 `attributedString(font:textColor:)`; build the replacement template from the two fields instead of
 letting the user type group numbers.
 
+## Find bar — `NSFindInteraction`, `NSTextProvidingFindSession`, `NSTextSearchingFindSession` (0.14.0+)
+
+AppKit's own find bar — Find, Find Next and Previous, Use Selection for Find, Replace and Replace All, every match
+highlighted as the user types — for any view inside a scroll view, from one `addInteraction(_:)`, with no
+`NSTextFinderClient` to write.
+
+**Replaces**: an `NSTextFinder` kept by hand with its `client` and `findBarContainer` wiring;
+`performTextFinderAction(_:)` / `performFindPanelAction(_:)` overrides that forward the sender's tag and the
+`validateUserInterfaceItem(_:)` cases for them; `NSTextFinderClient` implementations — `string`,
+`stringAtIndex(_:effectiveRange:endsWithSearchBoundary:)`, `stringLength`, `firstSelectedRange`,
+`contentView(at:effectiveCharacterRange:)`, `rects(forCharacterRange:)`, `drawCharacters(in:forContentView:)` — and
+the `noteClientStringWillChange()` calls around content changes.
+
+```bash
+rg -n -e 'NSTextFinder\b|NSTextFinderClient|performTextFinderAction|performFindPanelAction' \
+      -e 'stringAtIndex|endsWithSearchBoundary|contentView\(at:|noteClientStringWillChange'
+```
+
+```swift
+final class LogViewController: NSViewController, NSFindInteractionDelegate, NSTextProviding {
+    @IBOutlet var tableView: NSTableView!
+    var rows: [[String]] = []                                   // two columns
+    private lazy var findSession = NSTextProvidingFindSession(textProvider: self)
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        tableView.addInteraction(NSFindInteraction(sessionDelegate: self))
+    }
+
+    func findInteraction(_ interaction: NSFindInteraction, sessionFor view: NSView) -> NSFindSession? {
+        findSession
+    }
+
+    var numberOfProvidedStrings: Int { rows.count * 2 }        // one string per cell
+
+    func providedString(at stringIndex: Int) -> String {
+        rows[stringIndex / 2][stringIndex % 2]
+    }
+
+    func viewForProvidedString(at stringIndex: Int) -> NSView? {
+        let cellView = tableView.view(atColumn: stringIndex % 2, row: stringIndex / 2, makeIfNecessary: true)
+        return (cellView as? NSTableCellView)?.textField      // a text field: rectangles are measured for you
+    }
+
+    var visibleProvidedStringIndexes: IndexSet {
+        let visibleRows = tableView.rows(in: tableView.visibleRect)
+        return IndexSet(integersIn: visibleRows.location * 2 ..< NSMaxRange(visibleRows) * 2)
+    }
+
+    func scrollRangeToVisible(_ range: NSProvidedTextRange) {
+        tableView.scrollRowToVisible(range.stringIndex / 2)
+    }
+
+    func reload(_ newRows: [[String]]) {
+        rows = newRows
+        tableView.reloadData()
+        findSession.noteProvidedTextChanged()
+    }
+}
+```
+
+Content that searches itself — millions of rows, pages loaded on demand, an existing search engine — adopts
+`NSTextSearching` (UIKit's `UITextSearching`, with `NSTextRange`s whose `NSTextLocation`s it defines) and returns
+`NSTextSearchingFindSession(searchableObject:)`; adopting `NSFoundTextLocating` as well lets the find bar mark the
+matches itself, otherwise the content decorates them in `decorate(foundTextRange:document:usingStyle:)`.
+
+Also: `presentFindNavigator(showingReplace:)`, `dismissFindNavigator()`, `findNext()`, `findPrevious()`,
+`searchText`, `isFindNavigatorVisible` and `activeFindSession` on the interaction; `resultCount` and
+`highlightedResultIndex` on a session; `NSFindInteraction.rects(forCharacterRange:in:)` for ranges in text fields;
+`selectedProvidedTextRange`, `selectProvidedTextRange(_:)` and the replacement members on `NSTextProviding`.
+Objective-C: `-[NSFindInteraction initWithSessionDelegate:]`, `-[NSTextProvidingFindSession initWithTextProvider:]`,
+`-[NSTextSearchingFindSession initWithSearchableObject:]`.
+
+**Adopting**: delete the text finder, its client, the two action overrides and their validation, and the
+string-index bookkeeping behind `stringAtIndex`; keep the lookup that finds a row's text field. Report content
+changes after they happen with `noteProvidedTextChanged()` instead of `noteClientStringWillChange()` before them.
+
 ## Filter bar — `NSFilterControlBar` (0.10.0+)
 
 The bar at the bottom of an Xcode navigator: a filter field across the middle and buttons on either side
@@ -458,7 +535,7 @@ any `NSTextField`.
 
 **Replaces**: a hand-built bar under a sidebar or list — a search field and menu or action buttons laid out by
 frame or constraints, the field's height and insets picked per control size; an `NSGlassEffectView`
-wrapped around a search field by hand.
+wrapped around a search field, or around a pair of buttons, by hand.
 
 ```bash
 rg -n -e 'NSGlassEffectView' -e 'pullsDown' -e 'pullDownButton' -e 'addBottomAlignedAccessoryViewController'
@@ -484,6 +561,14 @@ filterBar.trailingItems = [clearItem]                // after the field
 filterBar.filterField.target = self
 filterBar.filterField.action = #selector(filterChanged(_:))
 
+// Two buttons on one capsule of glass instead of a circle each (0.14.0+):
+let recentItem = NSFilterControlBarItem(
+    image: NSImage(systemSymbolName: "clock", accessibilityDescription: nil),
+    target: self, action: #selector(toggleRecent(_:)))
+let filterGroup = NSFilterControlBarItemGroup(subitems: [recentItem, clearItem])
+filterGroup.title = "Filters"                        // what VoiceOver calls the group
+filterBar.trailingItems = [filterGroup]
+
 // At the bottom of a sidebar, with the list fading out under it as in Xcode:
 let accessory = NSSplitViewItemAccessoryViewController()
 accessory.view = filterBar
@@ -498,17 +583,22 @@ missing. A menu of a single item performs that item instead. A symbol image is s
 hierarchical or palette colours (0.10.1+) — an item has no tint, so swap in an accent-coloured symbol
 to show that a filter it controls is on. An item without a menu sends its `action` to its `target`, from
 the bar's button — show a popover from the sender. Items lay out in array order — the first leading item outermost,
-the first trailing item next to the field — and swap sides in a right-to-left layout. The bar sets the
+the first trailing item next to the field — and swap sides in a right-to-left layout. An
+`NSFilterControlBarItemGroup` (0.14.0+) is an item too, put in either array: on glass its `subitems`
+abut in one capsule, each as wide as a lone item's circle; off glass it looks exactly like its subitems
+put in one by one. A group's `isEnabled = false` disables every subitem; its own image, menu, target,
+action and tool tip are not used, and a group cannot hold another group. The bar sets the
 field's `controlSize` and frame, and its own intrinsic height follows: 44 points at `.large` under the
 macOS 26 design. While the field is on glass the bar keeps the filter field's background and border off;
 configure everything else — target and action, delegate, filter buttons — on the field directly.
 Objective-C: `-[NSFilterControlBarItem initWithImage:menu:]`, `-[NSFilterControlBarItem initWithImage:target:action:]`,
-`NSFilterControlBar.filterField`.
+`-[NSFilterControlBarItemGroup initWithSubitems:]`, `NSFilterControlBar.filterField`.
 
 **Adopting**: delete the hand-made bar view, its layout and per-size metrics, and any glass wrapped around
 the field; move each menu button's menu, or each plain button's target and action, into an
-`NSFilterControlBarItem`. A pull-down `NSPopUpButton`'s menu already starts with its face; a menu
-popped up by hand needs one put in front.
+`NSFilterControlBarItem`, and buttons that shared one piece of glass into an `NSFilterControlBarItemGroup`.
+A pull-down `NSPopUpButton`'s menu already starts with its face; a menu popped up by hand needs one put in
+front.
 
 ## Closure actions — `NSAction`
 

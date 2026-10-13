@@ -1,6 +1,6 @@
 ---
 name: appkit-app-modernization
-description: Use when writing, reviewing or migrating AppKit UI code in a project that depends on AppKitPlus (`import AppKitPlus`, AppKitPlus-Release) — use its API instead of hand-rolling, and inventory legacy code for migration. Covers NSOutlineViewDiffableDataSource, NSTableViewDiffableReorderableDataSource, NSBrowserDiffableDataSource, cell registrations, NSListContentConfiguration, NSBackgroundConfiguration, NSViewAccessory, NSAction, control events, NSButton.Configuration, NSView.animate, NSTraitCollection, NSLayerBackedView, NSContentUnavailableConfiguration, NSTableViewController and siblings, NSHostingConfiguration, updateProperties, NSGraphicsImageRenderer, UIKit NSBezierPath/geometry helpers, NSEffectView, NSNavigationController, drag/drop interactions, NSCursorInteraction, NSHoverAppearanceInteraction, NSScrollBehavior, NSScrollPagingInteraction, NSPasteboard accessors, NSDeferredMenuItem, NSPopUpPathControl, NSFilterSearchField, NSFindPatternSearchField, NSFilterTokenField, NSFilterControlBar, NSModernDrawer.
+description: Use when writing, reviewing or migrating AppKit UI code in a project that depends on AppKitPlus (`import AppKitPlus`, AppKitPlus-Release) — use its API instead of hand-rolling, and inventory legacy code for migration. Covers NSOutlineViewDiffableDataSource, NSTableViewDiffableReorderableDataSource, NSBrowserDiffableDataSource, cell registrations, NSListContentConfiguration, NSBackgroundConfiguration, NSViewAccessory, NSAction, control events, NSButton.Configuration, NSView.animate, NSTraitCollection, NSLayerBackedView, NSContentUnavailableConfiguration, NSTableViewController, NSHostingConfiguration, updateProperties, NSGraphicsImageRenderer, NSBezierPath/geometry helpers, NSEffectView, NSNavigationController, drag/drop interactions, NSCursorInteraction, NSHoverAppearanceInteraction, NSFindInteraction, NSScrollBehavior, NSScrollPagingInteraction, NSPasteboard accessors, NSDeferredMenuItem, NSPopUpPathControl, NSFilterSearchField, NSFindPatternSearchField, NSFilterTokenField, NSFilterControlBar, NSModernDrawer.
 ---
 
 # Modernising an AppKit App with AppKitPlus
@@ -29,7 +29,7 @@ The version is the `AppKitPlus-Release` pin in `Package.resolved`. New dependenc
 release, which is the release this skill describes:
 
 ```swift
-.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.13.0")
+.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.14.0")
 // target dependency: .product(name: "AppKitPlus", package: "AppKitPlus-Release")
 ```
 
@@ -142,8 +142,9 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | an `NSPathControl` with `pathStyle = .popUp` or a menu built per component; a breadcrumb of pop-up buttons rebuilt by hand when the selection changes | `NSPopUpPathControl` + `NSPopUpPathItem` on the model objects (0.8.0+) | interactions-and-controls |
 | an `NSSearchField` with toggle buttons or a spinner laid over it; a hand-drawn "filter is on" background; a match count drawn next to the text | `NSFilterSearchField` (`addFilterButton(with:…)`, `progress`, `numberOfMatches`) (0.9.0+) | interactions-and-controls |
 | an `NSTokenField` whose delegate parses `key:value` text into model objects, draws its own tokens, builds a completion popover, or saves recent filters | `NSFilterTokenField` + `NSFilterToken` / `NSFilterTokenType` (0.9.0+) | interactions-and-controls |
-| a navigator-style bar under a list — a filter field with menu or action buttons beside it, laid out by hand; an `NSGlassEffectView` wrapped around a search field | `NSFilterControlBar` + `NSFilterControlBarItem` (0.10.0+) | interactions-and-controls |
+| a navigator-style bar under a list — a filter field with menu or action buttons beside it, laid out by hand; an `NSGlassEffectView` wrapped around a search field | `NSFilterControlBar` + `NSFilterControlBarItem` (0.10.0+); `NSFilterControlBarItemGroup` for buttons sharing one capsule (0.14.0+) | interactions-and-controls |
 | a find field that builds an `NSRegularExpression` from typed text by hand; "digits" or "any word" offered as options beside the field; a find and replace pair where the user types `$1` | `NSFindPatternSearchField` + `NSFindPatternComponents` (0.13.0+) | interactions-and-controls |
+| an `NSTextFinder` kept by hand; `performTextFinderAction(_:)` / `performFindPanelAction(_:)` overrides forwarding the sender's tag; an `NSTextFinderClient` with `stringAtIndex(_:effectiveRange:endsWithSearchBoundary:)`, `contentView(at:effectiveCharacterRange:)`, `rects(forCharacterRange:)` | `NSFindInteraction` + `NSTextProvidingFindSession` / `NSTextProviding`, or `NSTextSearchingFindSession` / `NSTextSearching` for content that searches itself (0.14.0+) | interactions-and-controls |
 | `target = self` / `action = #selector(…)` per control; closure trampolines | `NSAction` (`addAction`, `primaryAction`) | interactions-and-controls |
 | a second target or a block per control event — a hand-kept target list, a trampoline per `mouseDown` / `mouseUp` override | `NSControl.addAction(_:for:)` and the rest of `UIControl`'s event-handler API (0.7.0+) | interactions-and-controls |
 | imperative button styling (`bezelStyle`, `setButtonType`, `bezelColor`, `NSButtonCell` subclasses) | `NSButton.Configuration` | interactions-and-controls |
