@@ -369,13 +369,17 @@ Objective-C: `-[NSFilterSearchFieldDelegate menuForFilterSearchField:]`,
 token field delegate's parsing, display strings and completion popover with token types and the two
 delegate methods; drop hand-kept recent filters for `recentFiltersEnabled` and `encodedState`.
 
-## Find fields with patterns — `NSSearchPatternField` (0.12.0+)
+## Find fields with patterns — `NSFindPatternSearchField` (0.13.0+)
 
 The find field of Xcode's find navigator. Besides text, the user inserts patterns — Digits, Any
 Characters, Email Address, twelve in all — as capsules, with Control-Option-Command-P or an Insert
 Pattern menu item; the field's content becomes a regular expression in which the text matches itself.
 Paired with a replace field, a find token double-clicked into the replace field stands there for what it
 matched, as a backreference.
+
+**Upgrading from 0.12.0**: there the field was `NSSearchPatternField` (cell `NSSearchPatternFieldCell`),
+the model `NSSearchPattern` and `NSSearchPatternComponents`, the content `searchPatternComponents`.
+Rename each to the name used here; there are no aliases, and the pasteboard type changed with them.
 
 **Replaces**: a search field whose text is escaped into an `NSRegularExpression` by hand; checkboxes or
 a pop-up for "digits", "whitespace" or "any word" beside the field; a replace field where the user has to
@@ -386,37 +390,42 @@ rg -n -e 'escapedPattern\(for' -e 'NSRegularExpression\(pattern' -e 'stringByRep
 ```
 
 ```swift
-let findField = NSSearchPatternField()
-let replaceField = NSSearchPatternField()
+let findField = NSFindPatternSearchField()
+let replaceField = NSFindPatternSearchField()
 findField.replaceField = replaceField                       // replaceField.findField points back
 findField.searchesImmediatelyAfterInsertingPattern = false  // search on Return only, as Xcode does
+findField.allowsPatternInsertion = searchesText             // Xcode allows patterns in text queries only
 findField.delegate = self                                   // menu(for:) supplies the magnifying glass's menu
 findField.target = self
 findField.action = #selector(find(_:))
 
 func menu(for searchField: NSFilterSearchField) -> NSMenu? {
+    let field = searchField as! NSFindPatternSearchField
     let menu = NSMenu()
-    menu.addItem((searchField as! NSSearchPatternField).insertPatternMenuItem())
-    menu.addItem(.separator())
+    if field.allowsPatternInsertion {                       // Xcode leaves the item out rather than disable it
+        menu.addItem(field.insertPatternMenuItem())
+        menu.addItem(.separator())
+    }
     for query in recentQueries {                            // property lists you keep yourself
-        let item = menu.addItem(withTitle: NSSearchPatternComponents(propertyListRepresentation: query)?.plainText ?? "",
-                                action: #selector(restoreQuery(_:)), keyEquivalent: "")
+        guard let components = NSFindPatternComponents(propertyListRepresentation: query) else { continue }
+        let item = menu.addItem(withTitle: components.plainText, action: #selector(restoreQuery(_:)), keyEquivalent: "")
+        item.attributedTitle = components.attributedString(font: menu.font, textColor: nil)  // tokens as in the field
         item.representedObject = query
     }
     return menu
 }
 
-@objc func find(_ sender: NSSearchPatternField) {
-    let components: NSSearchPatternComponents = sender.searchPatternComponents   // not stringValue: tokens are U+FFFC there
+@objc func find(_ sender: NSFindPatternSearchField) {
+    let components: NSFindPatternComponents = sender.findPatternComponents   // not stringValue: tokens are U+FFFC there
     guard let expression = try? components.regularExpression(matchingType: .contains, caseSensitive: false) else { return }
-    let template = replaceField.searchPatternComponents.replacementTemplate(searchComponents: components)
+    let template = replaceField.findPatternComponents.replacementTemplate(searchComponents: components)
     recentQueries.insert(components.propertyListRepresentation, at: 0)
     …
 }
 
-let custom = NSSearchPattern(regularExpression: #"\d+(?:\.\d+)*"#, title: "Version Number", tokenTitle: "Version")
-findField.patternGroups = NSSearchPattern.standardPatternGroups + [[custom]]
-for case .pattern(let pattern) in components.components { … }   // components is [.text(String) / .pattern(NSSearchPattern)]
+let custom = NSFindPattern(regularExpression: #"\d+(?:\.\d+)*"#, title: "Version Number", tokenTitle: "Version")
+findField.patternGroups = NSFindPattern.standardPatternGroups + [[custom]]
+for case .pattern(let pattern) in components.components { … }   // components is [.text(String) / .pattern(NSFindPattern)]
 ```
 
 Text is escaped; each token of a pattern with backreferences is a capture group the first time it appears
@@ -426,14 +435,18 @@ types regular expression syntax into. A replace field's menu offers the patterns
 editor of its own, one per window, that copies and pastes tokens — also from Xcode's find field — so the
 window delegate's `windowWillReturnFieldEditor(_:to:)` is not asked for it. The field is an
 `NSFilterSearchField` with `usesFilterAppearance` off and no placeholder; it is active while it holds text
-or tokens. `NSSearchField`'s recent searches keep `stringValue` and lose the tokens — keep
-`propertyListRepresentation` instead. Objective-C: `-insertPattern:`, `-insertPatternMenuItem`,
+or tokens. With `allowsPatternInsertion` off the key equivalent and `insertPattern(_:)` insert nothing and
+the menu item validates as disabled, while the tokens already in the field stay and pasting still works.
+`NSSearchField`'s recent searches keep `stringValue` and lose the tokens — keep
+`propertyListRepresentation` instead, and show a query with `attributedString(font:textColor:)`, which draws
+its tokens as the field does. Objective-C: `-insertPattern:`, `-insertPatternMenuItem`,
 `-regularExpressionWithMatchingType:caseSensitive:error:`, `-replacementTemplateWithSearchComponents:`,
-`-[NSSearchPattern patternWithIdentifier:]`.
+`-attributedStringWithFont:textColor:`, `-[NSFindPattern patternWithIdentifier:]`.
 
-**Adopting**: delete the escaping and the option checkboxes; read `searchPatternComponents` where the code
-read `stringValue`; store recent queries as property lists; build the replacement template from the two
-fields instead of letting the user type group numbers.
+**Adopting**: delete the escaping and the option checkboxes; read `findPatternComponents` where the code
+read `stringValue`; store recent queries as property lists and title them with
+`attributedString(font:textColor:)`; build the replacement template from the two fields instead of
+letting the user type group numbers.
 
 ## Filter bar — `NSFilterControlBar` (0.10.0+)
 
