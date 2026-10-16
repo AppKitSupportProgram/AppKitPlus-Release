@@ -29,7 +29,7 @@ The version is the `AppKitPlus-Release` pin in `Package.resolved`. New dependenc
 release, which is the release this skill describes:
 
 ```swift
-.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.15.0")
+.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.16.0")
 // target dependency: .product(name: "AppKitPlus", package: "AppKitPlus-Release")
 ```
 
@@ -141,6 +141,7 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | hover highlights on a hand-made `NSTrackingArea` — `mouseEntered` / `mouseExited` plus `updateTrackingAreas` | `NSHoverAppearanceInteraction` (0.6.0+) | interactions-and-controls |
 | snapping driven by `momentumPhase` or `didEndLiveScrollNotification` | `NSScrollBehaviorInteraction` + `NSScrollBehavior` | interactions-and-controls |
 | async menu loading in `menuNeedsUpdate` with a "Loading…" item | `NSDeferredMenuItem` | interactions-and-controls |
+| a search field put into an `NSMenu`, or key handling that hides menu items as the user types (`menuHasKeyEquivalent`, Carbon menu events, a `DVTFilteringMenu`-style subclass) | `NSMenu.filtersItemsWhileTyping` (0.16.0+) | interactions-and-controls |
 | an `NSPathControl` with `pathStyle = .popUp` or a menu built per component; a breadcrumb of pop-up buttons rebuilt by hand when the selection changes | `NSPopUpPathControl` + `NSPopUpPathItem` on the model objects (0.8.0+) | interactions-and-controls |
 | an `NSSearchField` with toggle buttons or a spinner laid over it; a hand-drawn "filter is on" background; a match count drawn next to the text | `NSFilterSearchField` (`addFilterButton(with:…)`, `progress`, `numberOfMatches`) (0.9.0+) | interactions-and-controls |
 | an `NSTokenField` whose delegate parses `key:value` text into model objects, draws its own tokens, builds a completion popover, or saves recent filters | `NSFilterTokenField` + `NSFilterToken` / `NSFilterTokenType` (0.9.0+) | interactions-and-controls |
@@ -149,6 +150,7 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | an `NSTextFinder` kept by hand; `performTextFinderAction(_:)` / `performFindPanelAction(_:)` overrides forwarding the sender's tag; an `NSTextFinderClient` with `stringAtIndex(_:effectiveRange:endsWithSearchBoundary:)`, `contentView(at:effectiveCharacterRange:)`, `rects(forCharacterRange:)` | `NSFindInteraction` + `NSTextProvidingFindSession` / `NSTextProviding`, or `NSTextSearchingFindSession` / `NSTextSearching` for content that searches itself (0.14.0+) | interactions-and-controls |
 | `target = self` / `action = #selector(…)` per control; closure trampolines | `NSAction` (`addAction`, `primaryAction`) | interactions-and-controls |
 | a graph of objects and their references drawn by hand — a custom view laying nodes out in columns with `CAShapeLayer` arrows; a web view running a JavaScript graph library | `NSObjectGridGraph`, the graph view of Xcode's Debug Memory Graph (0.15.0+) | interactions-and-controls |
+| an `NSObjectGridGraph` whose scrolling is rewritten by a `scrollWheel` override or an event monitor; zoom commands sent to it from hidden menu items or a `keyDown` override | `NSObjectGridGraph.interactionConfiguration`, `zoomToFit()`, `returnToHomePivot()` (0.16.0+) | interactions-and-controls |
 | a second target or a block per control event — a hand-kept target list, a trampoline per `mouseDown` / `mouseUp` override | `NSControl.addAction(_:for:)` and the rest of `UIControl`'s event-handler API (0.7.0+) | interactions-and-controls |
 | imperative button styling (`bezelStyle`, `setButtonType`, `bezelColor`, `NSButtonCell` subclasses) | `NSButton.Configuration` | interactions-and-controls |
 | `NSDatePicker` in calendar style; hand-built day grids | `NSCalendarView` | interactions-and-controls |

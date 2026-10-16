@@ -238,11 +238,33 @@ final class DocumentPageViewController: NSViewController {
 
 **Adopting**: delete the menu delegate code that existed only to load items late.
 
+## Type to filter a menu — `NSMenu.filtersItemsWhileTyping` (0.16.0+)
+
+Typing while a pop-up or context menu is open brings up a search field at the top of the menu, and the
+menu keeps only the items with a word beginning with the typed text — the menus of Xcode's jump bar.
+
+**Replaces**: a search field put into an `NSMenu` as a custom view item; key handling in a menu delegate
+or a Carbon event handler that hides items as the user types; a `DVTFilteringMenu`-style subclass.
+
+```bash
+rg -n -e 'FilteringMenu' -e 'menuHasKeyEquivalent' -e 'GetMenuTrackingData' -e 'HIMenuGetContentView' -e '_handleCarbonEvents'
+```
+
+```swift
+let menu = NSMenu()
+menu.filtersItemsWhileTyping = true    // and on each submenu that should filter as well
+```
+
+Objective-C: `filtersItemsWhileTyping`. `NSPopUpPathControl` turns it on for every menu it opens.
+
+**Adopting**: delete the search item and the key handling; leave the items as they are.
+
 ## Jump bars — `NSPopUpPathControl` (0.8.0+)
 
 A path bar whose every component opens a menu of the items that could take its place, lined up under
 the pointer, as in the jump bar of an Xcode editor. Rows with children open submenus that list them
-when they open. Choosing a row selects it, tells the delegate and sends the control's action.
+when they open. Choosing a row selects it, tells the delegate and sends the control's action. Typing
+in any of these menus filters it (0.16.0+).
 
 **Replaces**: `NSPathControl` with `pathStyle = .popUp`, or one built from `NSPathControlItem`s with a
 menu assembled per click (`pathControl(_:willPopUp:)`); a row of `NSPopUpButton`s acting as a
@@ -702,6 +724,42 @@ Objective-C: `-objectGridGraph:enumerateIncomingReferencesForNode:usingBlock:`,
 
 **Adopting**: keep the model, drop the layout and drawing code; implement the two enumeration methods
 and the two `willDisplay` methods, then set a pivot.
+
+### Panning, zooming and shortcuts — `interactionConfiguration` (0.16.0+)
+
+By default the graph behaves as Xcode's: two fingers on a trackpad pan, a mouse's scroll wheel zooms,
+Shift makes scrolling zoom, pinching zooms, dragging pans, and the keyboard does nothing.
+`interactionConfiguration` — a value type in Swift, so assigning through the property writes back —
+changes each of these and adds keyboard shortcuts:
+
+```swift
+// Scrolling pans with a mouse too; Command and scroll zooms, as in a design tool.
+graph.interactionConfiguration.scrollWheelAction = .pan
+graph.interactionConfiguration.zoomingScrollModifierFlags = .command
+graph.interactionConfiguration.zoomInShortcut = NSObjectGridGraph.KeyboardShortcut(keyEquivalent: "=", modifierFlags: .command)
+graph.interactionConfiguration.zoomToFitShortcut = NSObjectGridGraph.KeyboardShortcut(keyEquivalent: "9", modifierFlags: .command)
+graph.interactionConfiguration.returnToHomePivotShortcut = NSObjectGridGraph.KeyboardShortcut(keyEquivalent: "h", modifierFlags: [.command, .shift])
+graph.interactionConfiguration.arrowKeyPanDistance = 40
+
+graph.zoomToFit()          // every shown node in view, zooming in no further than the actual size
+graph.returnToHomePivot()  // back to where you last laid the graph out afresh, framed as setting it did
+```
+
+The home pivot moves only when you lay the graph out afresh around another node —
+`setPivotNodeIdentifier(_:maintainingCoordinates: nil)`. Setting the current pivot again (new data, a
+`layoutMode` change) and moving while keeping a node in place (a "Focus on" menu item, like a double
+click) leave it where it was.
+
+Also there: `gestureScrollAction`, `panningScrollModifierFlags`, `scrollWheelLineScroll` (points per
+line a wheel pans), `scrollZoomSensitivity`, `reversesScrollZoomDirection`, `allowsMagnification`,
+`panningButtonMask`, `zoomOutShortcut`, `actualSizeShortcut`; `.none` as a scroll action passes the
+scroll up the responder chain. Shortcuts match as menu key equivalents do and work only while the
+graph is first responder: with any keyboard control configured, the graph takes the focus when
+clicked and draws a focus ring (turn it off with `focusRingType = .none`); with none, it never takes
+the focus, as Xcode's does.
+
+**Replaces**: a `scrollWheel(with:)` override or local event monitor rewriting the graph's scroll
+events; hidden menu items or a `keyDown(with:)` override sending zoom commands to the graph.
 
 ## Closure actions — `NSAction`
 
