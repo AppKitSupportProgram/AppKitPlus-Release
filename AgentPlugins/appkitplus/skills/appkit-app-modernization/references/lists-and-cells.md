@@ -3,7 +3,7 @@
 Data sources, cell registration, and the configuration system that styles cells, rows, section
 headers and collection items. The pieces compose: a diffable data source's cell provider dequeues
 through a registration, and the registration's handler sets a content and a background
-configuration.
+configuration. The last section is the Xcode-style icons a list row shows.
 
 ## Outline views — `NSOutlineViewDiffableDataSource`
 
@@ -592,3 +592,61 @@ Objective-C: `+emptyConfiguration`, `+loadingConfiguration`, `+searchConfigurati
 
 **Adopting**: delete the overlay views and their `isHidden` toggling; each input that affects the
 empty state calls `setNeedsUpdateContentUnavailableConfiguration()`.
+
+## Xcode-style icons — `NSIcon`, `NSIconView` (0.15.0+)
+
+**Replaces**: list icons drawn by hand — a coloured rounded square with a letter (`C` for a class, `M` for a
+method) made with `NSImage(size:flipped:drawingHandler:)` or a layer; an image swapped for a white version
+in selected rows, or faded while the window is in the background; a menu item image redrawn for its
+highlighted state.
+
+```bash
+rg -n -e 'NSImage\(size:.*flipped:.*drawingHandler' -e 'imageWithSize:.*flipped:.*drawingHandler:' \
+      -e 'backgroundStyle\s*==\s*\.emphasized' -e 'NSBackgroundStyleEmphasized' \
+      -e 'NSWindow\.(didBecomeKey|didResignKey)Notification' -e 'NSWindow(DidBecomeKey|DidResignKey)Notification'
+```
+
+```swift
+// Xcode's own icons
+let classIcon = NSIcon.codeSymbolIcon(named: .class)        // "C" on a purple squircle
+let languageIcon = NSIcon.languageIcon(forIdentifier: "ja")
+let frameIcon = NSIcon.stackFrameIcon(libraryPath: frame.libraryPath, isUserCode: frame.isUserCode)
+
+// An icon of your own in the same style
+let specification = NSGeneratedIconSpecification(letters: "Db", shape: .squircle,
+                                                 backgroundColor: NSIconColor.teal.color, glyphColor: nil)
+let databaseIcon = NSIcon(generatedIconSpecification: specification)
+
+// In a table cell: the icon view follows the row's selection and the window's key state
+let iconView = NSIconView(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
+iconView.icon = classIcon
+iconView.dimsColorIconsInBackgroundWindows = true
+cellView.addSubview(iconView)
+cellView.imageView = iconView.imageViewForTableCellView
+
+// In a menu: the highlighted item shows the icon's highlighted image
+menuItem.icon = classIcon
+```
+
+Variants: `icon.forInactivePane()`, `icon.forFileStatus(.missing)`, `icon.withBadgeImage(_:)`,
+`icon.withSymbolConfiguration(_:)`. Other icons: `NSIcon(colorImage:highlightedImage:)`,
+`NSIcon(templateImage:contentTintColor:)`,
+`NSIcon.slashedIcon(symbolName:primaryConfiguration:highlightConfiguration:)`. Anywhere an image goes:
+`icon.image(of:)` and `icon.highlightedImage(of:)`.
+
+A specification has a shape (`.square`, `.circle`, `.squircle`, `.hexagon`, `.diamond`, `.none`), a
+glyph (`init(letters:…)`, `init(symbolName:…)`, `init(symbolImage:…)`, `init(image:…)`), and
+`glyphPunchesThrough`, `glyphOffset`, `minimumMeasuredContent`, `maximumGlyphWeight`, `symbolScale`;
+`image` and `selectedImage` draw it. `NSIconColor` names Xcode's 28 colours; `.color` gives the
+`NSColor`.
+
+Objective-C: `+[NSIcon codeSymbolIconNamed:]` with the `NSCodeSymbolIconName…` constants,
+`+languageIconForIdentifier:`, `+stackFrameIconForLibraryPath:isUserCode:`,
+`+iconWithGeneratedIconSpecification:`, `NSIconColorGetColor()`, `NSMenuItem.icon`.
+
+**Adopting**
+
+- Delete the drawing code and the per-state images; keep one `NSIcon` per kind of row.
+- Replace the cell's `NSImageView` with an `NSIconView` and hand its `imageViewForTableCellView` to
+  `cellView.imageView`, so dragging and accessibility still find the cell's image.
+- Delete the `backgroundStyle` overrides that swapped images and the key-window observers that faded them.

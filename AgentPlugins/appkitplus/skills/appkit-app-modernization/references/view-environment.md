@@ -213,6 +213,45 @@ Objective-C: `center`, `transform`, `contentMode`, `-bringSubviewToFront:`, `-se
 **Adopting**: delete the app's own `NSView` extensions that declare these names. Views placed by Auto
 Layout keep being moved through their constraints; `transform` is for visual effects.
 
+## AppKit's private `NSView` members — `import AppKitPlus.SPI` (0.15.0+)
+
+**Replaces**: a sizing view plus a temporary width constraint, laid out to read `fittingSize` at a given
+width; key-value coding strings that reach AppKit's private `NSView` members
+(`setValue(true, forKeyPath: "ignoreHitTest")`); the app's own declarations of them in a bridging
+header.
+
+```bash
+rg -n -e 'forKey(Path)?:\s*"(ignoreHitTest|maskView|frameTransform|_semanticContext|_effectiveSemanticContext)"' \
+      -e 'systemLayoutSizeFittingSize' -e '\.fittingSize\b'
+```
+
+`AppKitPlus.SPI` declares members AppKit implements on `NSView` but leaves out of its public headers.
+They are AppKit's own SPI, so `import AppKitPlus` does not include them: import the submodule in the
+files that need it, prefer public API wherever it covers the need, and read a member's documentation in
+the header before using it.
+
+```swift
+import AppKitPlus
+import AppKitPlus.SPI
+
+let rowSize = cellView.systemLayoutSizeFitting(
+    NSSize(width: tableView.bounds.width, height: 0),
+    withHorizontalFittingPriority: .required,
+    verticalFittingPriority: .fittingSizeCompression)
+
+dimmingView.ignoreHitTest = true   // a click on the view itself goes to the view below
+let isInSidebar = view._effectiveSemanticContext == .sidebar
+```
+
+Also there: `mask` (`UIView.mask`'s counterpart), `frameTransform`, `_semanticContext`,
+`_isUserInterfaceLayoutDirectionExplicitlySet()`, and the layout-margin hooks
+`-_marginsInsetsForSafeAreaInsets:`, `-_layoutMargins` and `-_updateLayoutMarginsGuideConstraintsIfNecessary`.
+Objective-C: `@import AppKitPlus.SPI;` or `#import <AppKitPlus/AppKitPlusSPI.h>`.
+
+**Adopting**: delete the KVC strings and the app's own declarations of these members; a sizing view
+kept only to call `fittingSize` at a width becomes one `systemLayoutSizeFitting` call on the view
+itself.
+
 ## Effects — `NSEffectView`, `NSVisualEffect`, `NSGlassEffect`, `NSEffectHandler`
 
 **Replaces**: hand-built `NSVisualEffectView` / `NSGlassEffectView` with `if #available(macOS 26, *)`

@@ -1,6 +1,6 @@
 ---
 name: appkit-app-modernization
-description: Use when writing, reviewing or migrating AppKit UI code in a project that depends on AppKitPlus (`import AppKitPlus`, AppKitPlus-Release) — use its API instead of hand-rolling, and inventory legacy code for migration. Covers NSOutlineViewDiffableDataSource, NSTableViewDiffableReorderableDataSource, NSBrowserDiffableDataSource, cell registrations, NSListContentConfiguration, NSBackgroundConfiguration, NSViewAccessory, NSAction, control events, NSButton.Configuration, NSView.animate, NSTraitCollection, NSLayerBackedView, NSContentUnavailableConfiguration, NSTableViewController, NSHostingConfiguration, updateProperties, NSGraphicsImageRenderer, NSBezierPath/geometry helpers, NSEffectView, NSNavigationController, drag/drop interactions, NSCursorInteraction, NSHoverAppearanceInteraction, NSFindInteraction, NSScrollBehavior, NSScrollPagingInteraction, NSPasteboard accessors, NSDeferredMenuItem, NSPopUpPathControl, NSFilterSearchField, NSFindPatternSearchField, NSFilterTokenField, NSFilterControlBar, NSModernDrawer.
+description: Use when writing, reviewing or migrating AppKit UI code in a project that depends on AppKitPlus (`import AppKitPlus`, AppKitPlus-Release) — use its API instead of hand-rolling, and inventory legacy code for migration. Covers NSOutlineViewDiffableDataSource, NSTableViewDiffableReorderableDataSource, NSBrowserDiffableDataSource, cell registrations, NSListContentConfiguration, NSBackgroundConfiguration, NSViewAccessory, NSAction, control events, NSButton.Configuration, NSView.animate, NSTraitCollection, NSLayerBackedView, NSContentUnavailableConfiguration, NSTableViewController, NSHostingConfiguration, updateProperties, NSGraphicsImageRenderer, NSBezierPath/geometry helpers, NSEffectView, NSNavigationController, drag/drop interactions, NSCursorInteraction, NSHoverAppearanceInteraction, NSFindInteraction, NSScrollBehavior, NSScrollPagingInteraction, NSPasteboard accessors, NSDeferredMenuItem, NSPopUpPathControl, NSFilterSearchField/TokenField/ControlBar, NSIcon, NSObjectGridGraph, NSModernDrawer.
 ---
 
 # Modernising an AppKit App with AppKitPlus
@@ -29,7 +29,7 @@ The version is the `AppKitPlus-Release` pin in `Package.resolved`. New dependenc
 release, which is the release this skill describes:
 
 ```swift
-.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.14.0")
+.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.15.0")
 // target dependency: .product(name: "AppKitPlus", package: "AppKitPlus-Release")
 ```
 
@@ -114,6 +114,7 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | info buttons (and their popovers), checkmarks, count badges, pop-up chevrons, hover "…" buttons re-creating the row's context menu, built into cells | `accessories` (`NSViewAccessory`: `.detail(popover:)`, `.actionMenu`, …) | lists-and-cells |
 | an `NSHostingView` embedded in a cell by hand | `NSHostingConfiguration` (macOS 13) | lists-and-cells |
 | empty-state and loading overlays toggled with `isHidden` | `contentUnavailableConfiguration` on the view controller or on the view it covers (`NSContentUnavailableConfiguration`) | lists-and-cells |
+| list icons drawn by hand — a coloured rounded square with a letter, Xcode style; an image swapped for a white version in selected rows or faded in a background window; a menu image redrawn for the highlighted item | `NSIcon` (Xcode's code symbol, language and stack frame icons, or an `NSGeneratedIconSpecification` of your own) shown in `NSIconView`; `NSMenuItem.icon` (0.15.0+) | lists-and-cells |
 | `viewDidChangeEffectiveAppearance`; accessibility display, key/main window, screen and backing-scale notifications; walking up to the enclosing table for its style | `traitCollection` + `registerForTraitChanges` | [view-environment](references/view-environment.md) |
 | environment values pushed down the view tree by hand | a custom `NSTraitDefinition` + `traitOverrides` | view-environment |
 | `perform(_:with:afterDelay: 0)` coalescing, `withObservationTracking` loops, `didSet { updateUI() }` | `updateProperties()` + `setNeedsUpdateProperties()` | view-environment |
@@ -121,6 +122,7 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | centre arithmetic, `layer?.setAffineTransform`, `addSubview(_:positioned:relativeTo:)` | `center`, `transform`, `contentMode`, `bringSubview(toFront:)`, `insertSubview(_:aboveSubview:)` | view-environment |
 | `NSVisualEffectView` / `NSGlassEffectView` behind `#available` branches | `NSEffectView` + `NSVisualEffect` / `NSGlassEffect` | view-environment |
 | a container that swaps its own backdrop view per style; a backdrop no stock effect covers | an `NSEffect` subclass + `NSEffectHandler` (`import AppKitPlus.NSEffectSubclass`), shown through `NSEffectView` | view-environment |
+| a sizing view plus a temporary width constraint to read `fittingSize` at a given width; KVC strings or bridging-header declarations reaching AppKit's private `NSView` members (`"ignoreHitTest"`) | `systemLayoutSizeFitting(_:withHorizontalFittingPriority:verticalFittingPriority:)`, `ignoreHitTest`, `mask`, … through `import AppKitPlus.SPI` (0.15.0+) | view-environment |
 | global styling singletons applied in `awakeFromNib` | `appearance()` proxies | view-environment |
 | `NSAnimationContext.runAnimationGroup` + `animator()`; hand-built `CABasicAnimation` / `CASpringAnimation` / `CATransition` on a view | the `NSView.animate` family | [animation-and-drawing](references/animation-and-drawing.md) |
 | `NSImage.lockFocus`, `NSBitmapImageRep` + `NSGraphicsContext`, `CGPDFContextCreate` | `NSGraphicsImageRenderer`, `NSGraphicsPDFRenderer` | animation-and-drawing |
@@ -146,6 +148,7 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | a find field that builds an `NSRegularExpression` from typed text by hand; "digits" or "any word" offered as options beside the field; a find and replace pair where the user types `$1` | `NSFindPatternSearchField` + `NSFindPatternComponents` (0.13.0+) | interactions-and-controls |
 | an `NSTextFinder` kept by hand; `performTextFinderAction(_:)` / `performFindPanelAction(_:)` overrides forwarding the sender's tag; an `NSTextFinderClient` with `stringAtIndex(_:effectiveRange:endsWithSearchBoundary:)`, `contentView(at:effectiveCharacterRange:)`, `rects(forCharacterRange:)` | `NSFindInteraction` + `NSTextProvidingFindSession` / `NSTextProviding`, or `NSTextSearchingFindSession` / `NSTextSearching` for content that searches itself (0.14.0+) | interactions-and-controls |
 | `target = self` / `action = #selector(…)` per control; closure trampolines | `NSAction` (`addAction`, `primaryAction`) | interactions-and-controls |
+| a graph of objects and their references drawn by hand — a custom view laying nodes out in columns with `CAShapeLayer` arrows; a web view running a JavaScript graph library | `NSObjectGridGraph`, the graph view of Xcode's Debug Memory Graph (0.15.0+) | interactions-and-controls |
 | a second target or a block per control event — a hand-kept target list, a trampoline per `mouseDown` / `mouseUp` override | `NSControl.addAction(_:for:)` and the rest of `UIControl`'s event-handler API (0.7.0+) | interactions-and-controls |
 | imperative button styling (`bezelStyle`, `setButtonType`, `bezelColor`, `NSButtonCell` subclasses) | `NSButton.Configuration` | interactions-and-controls |
 | `NSDatePicker` in calendar style; hand-built day grids | `NSCalendarView` | interactions-and-controls |

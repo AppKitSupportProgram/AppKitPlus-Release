@@ -600,6 +600,109 @@ the field; move each menu button's menu, or each plain button's target and actio
 A pull-down `NSPopUpButton`'s menu already starts with its face; a menu popped up by hand needs one put in
 front.
 
+## Object graphs — `NSObjectGridGraph` (0.15.0+)
+
+The graph view of Xcode's Debug Memory Graph. One object, the pivot, sits in the middle; the objects
+referencing it fan out to the left a generation at a time, the objects it references to the right,
+joined by right-angle arrows. Several references between the same two objects become one line with a
+count badge that lists them. Buttons beside each node expand or collapse its neighbors; the view
+pans, zooms and gives VoiceOver every node and line.
+
+**Replaces**: a custom `NSView` that lays nodes out in columns and draws arrows with `CAShapeLayer` or
+`NSBezierPath`; a web view running a JavaScript graph library; an outline view standing in for a graph.
+
+```bash
+rg -n -e 'CAShapeLayer' -e 'graphviz' -e 'dagre' -e 'cytoscape' -e 'WKWebView' -e 'class \w*Graph\w*View'
+```
+
+```swift
+// Describe the graph by identifier: nodes by NSObjectGridGraph.NodeIdentifier, a structure wrapping a 32-bit integer
+// (NodeIdentifier(8), .rawValue, and .none for no node), references by NSObjectGridGraph.ReferenceIdentifier, which
+// wraps a 64-bit integer the same way. The graph asks only for the part it shows.
+final class ReferenceGraphViewController: NSViewController, NSObjectGridGraphDataSource, NSObjectGridGraphDelegate {
+    private let graph = NSObjectGridGraph()
+    private let store: ReferenceStore   // your model
+
+    init(store: ReferenceStore) {
+        self.store = store
+        super.init(nibName: nil, bundle: nil)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func loadView() {
+        graph.dataSource = self
+        graph.delegate = self
+        graph.gridCellSize = NSSize(width: 150, height: 100)   // Xcode's; the shorter side is 50 pt at zoom level 1
+        view = graph
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        // The graph frames itself from its size when the pivot is set: set the first one once it has a size.
+        if graph.pivotNodeIdentifier == .none && !graph.bounds.isEmpty {
+            graph.setPivotNodeIdentifier(store.rootIdentifier, maintainingCoordinates: nil)
+        }
+    }
+
+    func objectGridGraph(_ graph: NSObjectGridGraph,
+                         enumerateIncomingReferencesForNode node: NSObjectGridGraph.NodeIdentifier,
+                         using block: (NSObjectGridGraph.ReferenceIdentifier, NSObjectGridGraph.NodeIdentifier,
+                                       NSObjectGridGraph.NodeIdentifier, Double, UnsafeMutablePointer<ObjCBool>) -> Void) {
+        var stop: ObjCBool = false
+        for edge in store.edges(into: node) where !stop.boolValue {
+            block(edge.identifier, edge.source, node, 0, &stop)
+        }
+    }
+
+    func objectGridGraph(_ graph: NSObjectGridGraph,
+                         enumerateOutgoingReferencesForNode node: NSObjectGridGraph.NodeIdentifier,
+                         using block: (NSObjectGridGraph.ReferenceIdentifier, NSObjectGridGraph.NodeIdentifier,
+                                       NSObjectGridGraph.NodeIdentifier, Double, UnsafeMutablePointer<ObjCBool>) -> Void) {
+        var stop: ObjCBool = false
+        for edge in store.edges(outOf: node) where !stop.boolValue {
+            block(edge.identifier, node, edge.destination, 0, &stop)
+        }
+    }
+
+    func objectGridGraph(_ graph: NSObjectGridGraph, willDisplay node: any NSObjectGridNode) {
+        node.label = store.typeName(of: node.identifier)
+        node.icon = NSImage(systemSymbolName: "shippingbox", accessibilityDescription: nil)   // a symbol takes the label color
+    }
+
+    func objectGridGraph(_ graph: NSObjectGridGraph, willDisplay reference: any NSObjectGridReference) {
+        reference.label = store.name(of: reference.identifier)
+        reference.style = store.isWeak(reference.identifier) ? .light : .default
+    }
+}
+```
+
+The graph keeps no copy of your data: it asks again whenever it lays a node's neighbors out, so the
+answers must stay the same until you set the pivot again — which is also how you show changed data
+(`setPivotNodeIdentifier(graph.pivotNodeIdentifier, maintainingCoordinates: graph.selectedNode)` keeps
+the selected node where it is). A double click makes a node the pivot, keeping it in place; implement
+`objectGridGraph(_:didDoubleClick:)` to do something else. Other delegate methods: `didClick` /
+`didCommandClick` for nodes and references, `contextMenuFor`, and two to hide the pivot frame and the
+arrows pointing at an off-screen selection. Group nodes — Xcode's reference cycles — come from the
+data source's `memberNodeCountForGroupNode` and `enumerateMemberNodesOfGroupNode`; report every reference
+between a member and an object outside the group as a reference of the group's identifier, at both ends,
+and only the references among members under the members' identifiers — the graph does not gather a group's
+references from its members.
+
+`layoutMode = .exploration` shows only some neighbors of an expanded node — the referrers on a path to
+a root, and the first referenced nodes in your order — and turns the buttons beside a node into a
+popover that lists every neighbor with a checkbox. Give it details through
+`objectGridGraph(_:neighborDetailsForNodesWithIncomingEdges:toNode:)` and its outgoing twin (objects
+adopting `NSObjectGridNeighborDetails`: `identifier`, optional `isOnPathToRoot` and `title`), and
+columns through `objectGridGraph(_:filteringTableColumnsFor:showsIncomingEdges:)` — `NSTableColumn`s
+whose `identifier` is a key path into your details.
+
+Objective-C: `-objectGridGraph:enumerateIncomingReferencesForNode:usingBlock:`,
+`-objectGridGraph:willDisplayNode:`, `-setPivotNodeIdentifier:maintainingCoordinates:`,
+`NSObjectGridNodeIdentifierNone`.
+
+**Adopting**: keep the model, drop the layout and drawing code; implement the two enumeration methods
+and the two `willDisplay` methods, then set a pivot.
+
 ## Closure actions — `NSAction`
 
 **Replaces**: `target = self` / `action = #selector(…)` with an `@objc` handler method per control;
