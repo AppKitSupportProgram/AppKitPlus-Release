@@ -644,6 +644,9 @@ rg -n -e 'CAShapeLayer' -e 'graphviz' -e 'dagre' -e 'cytoscape' -e 'WKWebView' -
 final class ReferenceGraphViewController: NSViewController, NSObjectGridGraphDataSource, NSObjectGridGraphDelegate {
     private let graph = NSObjectGridGraph()
     private let store: ReferenceStore   // your model
+    // One image object for every node that looks alike: the graph draws a texture of up to a megabyte for each image
+    // object it is given, and NSImage(systemSymbolName:accessibilityDescription:) makes a new one on every call.
+    private let objectIcon = NSImage(systemSymbolName: "shippingbox", accessibilityDescription: nil)
 
     init(store: ReferenceStore) {
         self.store = store
@@ -688,7 +691,7 @@ final class ReferenceGraphViewController: NSViewController, NSObjectGridGraphDat
 
     func objectGridGraph(_ graph: NSObjectGridGraph, willDisplay node: any NSObjectGridNode) {
         node.label = store.typeName(of: node.identifier)
-        node.icon = NSImage(systemSymbolName: "shippingbox", accessibilityDescription: nil)   // a symbol takes the label color
+        node.icon = objectIcon   // a symbol takes the label color
     }
 
     func objectGridGraph(_ graph: NSObjectGridGraph, willDisplay reference: any NSObjectGridReference) {
@@ -760,6 +763,57 @@ the focus, as Xcode's does.
 
 **Replaces**: a `scrollWheel(with:)` override or local event monitor rewriting the graph's scroll
 events; hidden menu items or a `keyDown(with:)` override sending zoom commands to the graph.
+
+### Top to bottom — `layoutOrientation` (0.17.0+)
+
+`layoutOrientation = .vertical` lays the graph out from the top down: the referrers in rows above the
+pivot, the objects it references in rows below, each generation left to right in your order. Lines
+leave a node under its label and come into the next one at the top of its icon. The default,
+`.horizontal`, is Xcode's.
+
+```swift
+graph.gridCellSize = NSSize(width: 140, height: 175)   // taller than wide: a label and the line under it
+graph.layoutOrientation = .vertical
+```
+
+`gridCellSize` still means the distance between columns × the distance between rows, so give a
+vertical graph cells taller than wide: with Xcode's 150 × 100 the rows of a zoomed-out graph stand 6
+points apart. Labels show in a vertical graph once rows are 100 points apart, against 70 across.
+Changing the orientation lays the graph out again around the pivot, animated; what is expanded, the
+selection, the home pivot and the zoom stay.
+
+**Replaces**: a rotated layer or view turning a graph on its side; a hand-drawn tree or org chart
+view for a top-down layout next to the graph.
+
+### Expand and collapse everything — `expandAll(_:)`, `collapseAll(_:)` (0.17.0+)
+
+`expandAll(.referencedNodes)` expands the objects the pivot references, then the ones they
+reference, a generation at a time, until every object reachable that way is shown.
+`collapseAll(.referencedNodes)` goes back to the pivot's own neighbors, each collapsed. Pass
+`.referrers` for the other side, or both.
+
+```swift
+expandAllButton.addAction(NSAction { [weak self] _ in self?.graph.expandAll(.referencedNodes) })
+collapseAllButton.addAction(NSAction { [weak self] _ in self?.graph.collapseAll(.referencedNodes) })
+```
+
+The graph is a tree drawn from the pivot, so expanding nodes one by one shows an object referenced
+from several shown objects under each of them. Expanding all shows every object once instead, in its
+place nearest the pivot, and leaves it off — with the line to it — under the other objects
+referencing it: 600 libraries with 7,000 links between them show 600 nodes rather than 7,000, and
+cycles end. An object whose neighbors are all shown elsewhere stays collapsed; one whose neighbors
+are partly shown elsewhere shows the rest, and its button then opens the neighbor filtering popover
+to add the others, as every node's does in exploration mode — Option-click collapses it. The view
+stays where it is; call `zoomToFit()` to see the whole graph. In exploration mode each node shows,
+of the neighbors its button shows at first, those shown nowhere else.
+
+Thousands of nodes — a graph expanded by hand, or one with that many objects — stay responsive as
+long as the icons are shared image objects (see the sample above). The icon set in `willDisplay`
+is drawn once for all the places of a node; an image object made anew for every node is drawn once
+for each.
+
+**Replaces**: walking your model to expand the graph's nodes one at a time; an outline view standing
+in for a graph to get Expand All.
 
 ## Closure actions — `NSAction`
 

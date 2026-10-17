@@ -29,7 +29,7 @@ The version is the `AppKitPlus-Release` pin in `Package.resolved`. New dependenc
 release, which is the release this skill describes:
 
 ```swift
-.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.16.0")
+.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.17.0")
 // target dependency: .product(name: "AppKitPlus", package: "AppKitPlus-Release")
 ```
 
@@ -151,6 +151,8 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | `target = self` / `action = #selector(…)` per control; closure trampolines | `NSAction` (`addAction`, `primaryAction`) | interactions-and-controls |
 | a graph of objects and their references drawn by hand — a custom view laying nodes out in columns with `CAShapeLayer` arrows; a web view running a JavaScript graph library | `NSObjectGridGraph`, the graph view of Xcode's Debug Memory Graph (0.15.0+) | interactions-and-controls |
 | an `NSObjectGridGraph` whose scrolling is rewritten by a `scrollWheel` override or an event monitor; zoom commands sent to it from hidden menu items or a `keyDown` override | `NSObjectGridGraph.interactionConfiguration`, `zoomToFit()`, `returnToHomePivot()` (0.16.0+) | interactions-and-controls |
+| a graph or dependency tree drawn top to bottom by hand — a rotated graph view, an org chart view | `NSObjectGridGraph` with `layoutOrientation = .vertical` (0.17.0+) | interactions-and-controls |
+| an Expand All command for a graph written by hand — walking the model to expand each node in turn; an outline view standing in for a graph to get `expandItem(nil, expandChildren: true)` | `NSObjectGridGraph.expandAll(_:)`, `collapseAll(_:)` (0.17.0+) | interactions-and-controls |
 | a second target or a block per control event — a hand-kept target list, a trampoline per `mouseDown` / `mouseUp` override | `NSControl.addAction(_:for:)` and the rest of `UIControl`'s event-handler API (0.7.0+) | interactions-and-controls |
 | imperative button styling (`bezelStyle`, `setButtonType`, `bezelColor`, `NSButtonCell` subclasses) | `NSButton.Configuration` | interactions-and-controls |
 | `NSDatePicker` in calendar style; hand-built day grids | `NSCalendarView` | interactions-and-controls |
