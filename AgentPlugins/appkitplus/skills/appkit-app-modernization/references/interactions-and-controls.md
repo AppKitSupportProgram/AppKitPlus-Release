@@ -313,6 +313,16 @@ shortcut. The delegate customises the menus: `menuItemFor:defaultMenuItem:`,
 `lastComponentFillsWidth`, `wantsCapsuleHighlights`, `selectsComponentsOneAtATime`, `controlSize`.
 Objective-C: `-[NSPopUpPathControlDelegate popUpPathControl:didSelectItem:]`, `-popUpMenuForComponentAtIndex:`.
 
+**Popovers instead of menus** (0.18.0+): set `navigationPresentationStyle = .popover` and each
+component shows its peers in a searchable `NSNavigationPopoverController` under it — what Xcode's jump bar
+does under its navigation popover setting. A row whose item has children shows a chevron and pushes them
+in, with a back button; `.singleLevelPopover` lists one level and selects whatever is chosen.
+`preferredPopoverEdge` picks the side. `popUpPathControl(_:navigationPopoverItemFor:defaultNavigationPopoverItem:)`
+changes a row, the way `menuItemFor:defaultMenuItem:` changes a menu row, and
+`popUpPathControl(_:willPresent:for:)` hands over the controller before it shows — for footer rows, a
+width, or rows loaded asynchronously with `insertItems(_:at:animated:)` while `expectsMoreItems` spins.
+Objective-C: `-[NSPopUpPathControlDelegate popUpPathControl:willPresentNavigationPopoverController:forItem:]`.
+
 **Adopting**: delete the per-click menu assembly and the breadcrumb rebuilding; let the model objects
 adopt `NSPopUpPathItem`.
 
@@ -385,7 +395,40 @@ completion list follow it, and the token field is as tall as a search field of t
 Objective-C: `-[NSFilterSearchFieldDelegate menuForFilterSearchField:]`,
 `-[NSFilterTokenFieldDelegate filterTokenFieldDidChangeFilter:]`,
 `-filterTokenField:completionsForString:completionHandler:`, `-filterTokenField:tokensForString:`,
-`-[NSFilterTokenField restoreStateFromData:error:]`.
+`-filterTokenField:editingStringForToken:` (0.18.0+), `-[NSFilterTokenField restoreStateFromData:error:]`.
+
+**Text tokens, as in Xcode's navigators** (0.18.0+): the Project navigator's filter turns typed text
+into tokens whose key shows only a menu arrow, switching between Contains, Does Not Contain, Begins With
+and Ends With, with Begins With drawn as `loo ⋯` and Ends With as `⋯ loo`. Give the field one type whose
+`title` is empty and those four comparison types; `valuePrefix` / `valueSuffix` put the marks on the value.
+A token whose comparison type is not among `comparisonTypes` — a wildcard pattern your parser makes — gets
+no comparison items, and with no types to choose, no menu and no arrow. Parse `loo*` and `*loo` in
+`filterTokenField(_:tokensFor:)`, and give each token back the text it parses from in
+`filterTokenField(_:editingStringFor:)`: a double click, `stringValue`, VoiceOver and copied text all read
+it. The navigators combine every token with AND, so set `operatorDisplayMode = .never`.
+
+```swift
+let textType = NSFilterTokenType(identifier: "text", title: "")         // the key shows only the arrow
+let contains = NSFilterTokenComparisonType(identifier: "contains", title: "Contains", exclusion: false)
+let doesNotContain = NSFilterTokenComparisonType(identifier: "doesNotContain", title: "Does Not Contain", exclusion: true)
+let beginsWith = NSFilterTokenComparisonType(identifier: "beginsWith", title: "Begins With", exclusion: false,
+                                             valuePrefix: nil, valueSuffix: "⋯")
+let endsWith = NSFilterTokenComparisonType(identifier: "endsWith", title: "Ends With", exclusion: false,
+                                           valuePrefix: "⋯", valueSuffix: nil)
+navigatorField.tokenTypes = [textType]
+navigatorField.comparisonTypes = [contains, doesNotContain, beginsWith, endsWith]
+navigatorField.defaultTokenType = textType
+navigatorField.defaultComparisonType = contains
+navigatorField.operatorDisplayMode = .never
+
+func filterTokenField(_ tokenField: NSFilterTokenField, editingStringFor token: NSFilterToken) -> String? {
+    switch token.comparisonType {
+    case beginsWith: token.value + "*"
+    case endsWith: "*" + token.value
+    default: nil                                                          // the field's own form
+    }
+}
+```
 
 **Adopting**: delete the overlay buttons, the background drawing and the match-count label; replace the
 token field delegate's parsing, display strings and completion popover with token types and the two
@@ -621,6 +664,99 @@ the field; move each menu button's menu, or each plain button's target and actio
 `NSFilterControlBarItem`, and buttons that shared one piece of glass into an `NSFilterControlBarItemGroup`.
 A pull-down `NSPopUpButton`'s menu already starts with its face; a menu popped up by hand needs one put in
 front.
+
+## Playback scrubbers — `NSPlaybackSlider` (0.18.0+)
+
+The time slider of the Music app's full-screen player: a thin capsule with no knob, its elapsed part
+drawn brighter and added onto the dark backdrop behind it. Pressing anywhere moves the value to the
+pointer and grows the bar to the full height of the slider with a spring; dragging scrubs; letting go
+shrinks it back. It is an `NSSlider` in every other respect — value, range, target and action,
+bindings, the keyboard and accessibility work as for any slider.
+
+**Replaces**: an `NSSlider` subclass or a custom `NSSliderCell` drawing a thin track; a knob hidden by
+drawing over it, or through a private `hidesKnob`; a progress bar animated by hand to grow on mouse
+down; a SwiftUI `Slider` with a custom style hosted in an AppKit window only for this look; an
+`NSProgressIndicator` with a click recognizer standing in for a scrubber.
+
+```bash
+rg -n -e 'NSSliderCell' -e 'drawBar' -e 'drawKnob' -e 'hidesKnob' -e 'knobThickness' -e 'scrubb' -e 'NSProgressIndicator' -e 'SliderStyle'
+```
+
+```swift
+let timeSlider = NSPlaybackSlider()          // 16 points tall, continuous, linear
+timeSlider.minValue = 0
+timeSlider.maxValue = duration
+timeSlider.doubleValue = currentTime
+timeSlider.target = self
+timeSlider.action = #selector(scrub(_:))
+timeSlider.scrubbingDelegate = self
+
+// Stop following playback while the user drags; seek when they let go.
+func playbackSliderDidBeginScrubbing(_ playbackSlider: NSPlaybackSlider) {
+    isScrubbing = true
+}
+
+func playbackSliderDidEndScrubbing(_ playbackSlider: NSPlaybackSlider) {
+    isScrubbing = false
+    player.seek(to: playbackSlider.doubleValue)
+}
+```
+
+Put it on a dark backdrop, as Music's player is. Its frame is its alignment rectangle, so time labels
+6 points below the slider's `bottomAnchor` sit where Music puts them. Objective-C:
+`-[NSPlaybackSliderDelegate playbackSliderDidBeginScrubbing:]`, `-playbackSliderDidEndScrubbing:`.
+
+**Adopting**: delete the custom track drawing, the knob hiding and the press animation, and make the
+slider an `NSPlaybackSlider` — in a nib, setting the slider's class is enough; its cell follows.
+
+## Choosers in a popover — `NSNavigationPopoverController` (0.18.0+)
+
+The searchable list Xcode's toolbar opens for its scheme and run destination: a transient popover with
+a filter field on top that keeps the keyboard focus while Up Arrow, Down Arrow and Return work the
+list. Rows carry icons, a key equivalent column and indentation, or are headers, separators and bold
+headings that float as the list scrolls; footer rows sit under the list and are pinned to the bottom
+when everything does not fit on the screen. Rows can arrive after the popover opened, with a spinner
+by the filter field; a chosen row can keep the popover open with a spinner of its own while the work
+finishes. Pressing on the anchor, dragging in and letting go chooses, as in a pop-up menu, and a row
+can lead to more rows with a back button.
+
+**Replaces**: an `NSTableView` and an `NSSearchField` in an `NSPopover` built by hand — the filtering,
+the arrow keys forwarded from the field to the table, the hover selection, the sizing to the content;
+an `NSMenu` with a search field in a custom `NSMenuItem.view`; a pop-up button whose menu is too long
+to scan.
+
+```bash
+rg -n -e 'NSPopover' -e 'contentViewController' -e 'controlTextDidChange' -e 'doCommandBy' -e 'moveDown' -e 'NSMenuItem.*view'
+```
+
+```swift
+let items = schemes.map { scheme -> NSNavigationPopoverItem in
+    let item = NSNavigationPopoverItem(title: scheme.name)
+    item.image = NSImage(systemSymbolName: "app", accessibilityDescription: nil)
+    item.representedObject = scheme
+    return item
+}
+let chooser = NSNavigationPopoverController(items: items, footerItems: [manageItem], title: "Filter")
+chooser.delegate = self
+chooser.resizingBehavior = [.grows, .shrinks, .keepsTopStable]   // follow the filter, top edge still
+chooser.show(relativeTo: button.bounds, of: button, preferredEdge: .maxY, animated: true)
+
+func navigationPopoverController(_ controller: NSNavigationPopoverController, didSelect item: NSNavigationPopoverItem) -> Bool {
+    select(item.representedObject as! Scheme)
+    return true                                              // close
+}
+```
+
+Filtering keeps the rows whose title contains the typed text, ignoring case; implement
+`navigationPopoverController(_:filterStringDidChange:)` and set `filteredItems` to filter yourself. Grow
+the list while it is open with `insertItems(_:at:animated:)` and `expectsMoreItems`; keep it open after a
+choice with `indicateMoreTimeNeededForSelectedItem()`; show the rows a row leads to with
+`pushItems(_:footerItems:title:animated:)`, with `hierarchyStyle = .pushNavigation` set before showing for
+the back button. Objective-C: `-showRelativeToRect:ofView:preferredEdge:animated:`,
+`-[NSNavigationPopoverControllerDelegate navigationPopoverController:didSelectItem:]`.
+
+**Adopting**: delete the hand-built table, field and popover glue — the arrow-key forwarding, the
+hover tracking area, the size computation — and turn the model objects into items.
 
 ## Object graphs — `NSObjectGridGraph` (0.15.0+)
 
@@ -939,21 +1075,35 @@ Selections arrive as `DateComponents` through the selection behaviour's delegate
 ## Device information — `NSDevice`
 
 **Replaces**: `sysctlbyname("hw.model")` and friends, IOKit queries for the serial number or the
-battery, `Host.current()`.
+battery, `IOPSCopyPowerSourcesInfo`, `Host.current()`.
 
 ```bash
 rg -n -e 'sysctlbyname\("hw\.' -e 'machdep\.cpu\.brand_string' -e 'IOPlatformSerialNumber|IOPlatformExpertDevice' \
       -e 'AppleSmartBattery|IOPSCopyPowerSourcesInfo' -e 'Host\.current\(\)'
 ```
 
+`NSDevice.current` hands out readings grouped by area (0.18.0+): `model`, `system`, `processor`,
+`memory`, `storage`, and `battery`, which is nil on a Mac without one. Each reading is immutable and read at
+one moment; `model` and `processor` are read once per process, the others again on every access.
+
 ```swift
 let device = NSDevice.current
-let summary = "\(device.marketingName) (\(device.modelIdentifier)), \(device.processorName)"
-if device.isBatteryAvailable { showBattery(level: device.batteryLevel, state: device.batteryState) }
+let summary = "\(device.model.marketingName) (\(device.model.identifier)), \(device.processor.name)"
+if let battery = device.battery {
+    showBattery(level: battery.level, state: battery.state, health: battery.health)
+    if battery.isChargingPaused { explainPause(battery.chargingPauseReason) }  // .chargeLimit, .optimizedCharging
+}
 ```
 
-Also `serialNumber`, `systemVersion`, `physicalMemory`, `batteryHealth`, `batteryCycleCount`,
-`thermalState`, `diskAvailableCapacity`, `deviceSymbolName`.
+`battery.state` means what `UIDevice.batteryState` means: plugged in and not full is `.charging`, also while
+the system holds the battery at a charge limit, which `isChargingPaused` and `chargingPauseReason` report.
+The battery also has `cycleCount`, `designCapacity` and `fullChargeCapacity` (mAh), `temperature`, `voltage`,
+`amperage`, `timeToEmpty`, `timeToFullCharge` and `adapterWattage`; `system` has `version`, `computerName`,
+`uptime` and `thermalState`; `model` has `serialNumber`, `icon` and `symbolName`; `processor` has
+`performanceCoreCount` and `efficiencyCoreCount`.
+
+Up to 0.17.0 these were flat properties on `NSDevice` itself (`modelIdentifier`, `batteryLevel`,
+`batteryHealth`, `thermalState`, `diskAvailableCapacity`, …).
 
 ## Key codes — `NSEvent.key`, `NSVirtualKey`
 

@@ -124,16 +124,19 @@ three members exist on `NSView`. Objective-C: `-setNeedsUpdateProperties`, `-upd
 wherever a non-observable input changes, and delete the coalescing and tracking machinery. On macOS
 12 and 13, call `setNeedsUpdateProperties()` for observable inputs too.
 
-## Layer-backed base classes — `NSLayerBackedView`, `NSLayerBackedViewController` and their variants
+## View base classes — `NSPlusView`, `NSPlusViewController`, the layer-backed pair and their variants
 
-A view already set up for layer-backed drawing, and a view controller with first-layout and
-first-appearance hooks — plus the same members on the system classes that cannot inherit from them:
+A view with writable layout margins and `isUserInteractionEnabled` (`NSPlusView`, next release); a view
+controller with first-layout and first-appearance hooks (`NSPlusViewController`, next release); the
+same two already set up for layer-backed drawing (`NSLayerBackedView`, `NSLayerBackedViewController`,
+which inherit from them) — plus the same members on the system classes that cannot inherit from them:
 `NSLayerBackedControl`, `NSLayerBackedTableCellView` and `NSLayerBackedCollectionViewItem`.
 
 **Replaces**: `wantsLayer = true` + `layerContentsRedrawPolicy = .onSetNeedsDisplay` in every
 initialiser, a control's or a table cell view's included; `didLayoutOnce` / `hasAppeared` flags, an
 item's included; `loadView() { view = NSView(); view.wantsLayer = true }`; per-container
-`contentInsets` / `padding` properties used as constraint constants.
+`contentInsets` / `padding` properties used as constraint constants — on a view that draws in
+`draw(_:)` too, through `NSPlusView`.
 
 ```bash
 rg -n -e 'wantsLayer\s*=\s*true' -e 'layerContentsRedrawPolicy' \
@@ -159,6 +162,19 @@ final class DetailViewController: NSLayerBackedViewController {
 cardView.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
 titleLabel.leadingAnchor.constraint(equalTo: cardView.layoutMarginsGuide.leadingAnchor).isActive = true
 
+// The same margins and hooks for a view that keeps drawing in draw(_:) and wants no layer defaults.
+final class BadgeView: NSPlusView {
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.controlAccentColor.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
+    }
+}
+
+final class BadgeViewController: NSPlusViewController {
+    override class var viewClass: any NSPlusViewProtocol.Type { BadgeView.self }
+    override func viewDidFirstAppear() { super.viewDidFirstAppear(); startInitialFetch() }
+}
+
 // A control: NSControl + its cell as before, with the same members as NSLayerBackedView.
 final class RatingControl: NSLayerBackedControl {
     override class var cellClass: AnyClass? { get { RatingCell.self } set {} }
@@ -170,19 +186,27 @@ final class PhotoItem: NSLayerBackedCollectionViewItem {
 }
 ```
 
-`NSLayerBackedView`: `layerClass`, `userInteractionEnabled`, `sizeThatFits(_:)`,
+`NSPlusView` (0.18.0+): `isUserInteractionEnabled` (`userInteractionEnabled` in Swift through
+0.17.0), `sizeThatFits(_:)`,
 `layoutMargins`, `directionalLayoutMargins`, `preservesSuperviewLayoutMargins`,
-`insetsLayoutMarginsFromSafeArea`, `layoutMarginsDidChange()`.
+`insetsLayoutMarginsFromSafeArea`, `layoutMarginsDidChange()` — and no layer: `wantsLayer`,
+`wantsUpdateLayer` and the redraw policy stay AppKit's, so `draw(_:)` is called as on any `NSView`.
+`NSLayerBackedView`: all of those, inherited from `NSPlusView` (next release; earlier releases declare
+them on `NSLayerBackedView` itself, with the same behaviour), plus `layerClass`. `NSIconView` and
+`NSObjectGridGraph` are `NSPlusView`s too (0.18.0+).
 `NSLayerBackedControl` (0.9.0+) and `NSLayerBackedTableCellView` (0.9.0+): the same members
-on an `NSControl` and an `NSTableCellView`. `NSLayerBackedViewController`:
-`viewClass`, `layerBackedView`, `viewWillFirstLayout` / `viewDidFirstLayout`,
-`viewWillFirstAppear` / `viewDidFirstAppear`, `viewSafeAreaInsetsDidChange`, and the same members on an
-`NSCollectionViewItem` through `NSLayerBackedCollectionViewItem` (0.9.0+). `viewClass` is typed
-`any NSLayerBackedViewProtocol.Type` (0.8.0+); up to 0.7.0 it is `AnyClass`.
+on an `NSControl` and an `NSTableCellView`. `NSPlusViewController` (0.18.0+): `viewClass`
+(`any NSPlusViewProtocol.Type`, `NSPlusView` by default), `viewWillFirstLayout` / `viewDidFirstLayout`,
+`viewWillFirstAppear` / `viewDidFirstAppear`, `viewSafeAreaInsetsDidChange`, `menu(for:)`.
+`NSLayerBackedViewController`: all of those, inherited from `NSPlusViewController` (0.18.0+), plus
+`layerBackedView` and `viewUpdateLayer()`; its `viewClass` is typed `any NSLayerBackedViewProtocol.Type`
+(0.8.0+; up to 0.7.0 it is `AnyClass`). The same members on an `NSCollectionViewItem` through
+`NSLayerBackedCollectionViewItem` (0.9.0+).
 
 **Adopting**: change the superclass, move drawing into `updateLayer()`, and delete the layer setup and
-the once-flags. A view that must keep drawing in `draw(_:)` overrides `wantsUpdateLayer` to return
-`false`. A control changes `NSControl` to `NSLayerBackedControl` and keeps drawing through its cell —
+the once-flags. A view that must keep drawing in `draw(_:)` derives from `NSPlusView` instead, and its
+controller from `NSPlusViewController` (0.18.0+) — `NSLayerBackedView` never calls `draw(_:)` unless
+`wantsUpdateLayer` is overridden to return `false`, which is the way on releases before `NSPlusView`. A control changes `NSControl` to `NSLayerBackedControl` and keeps drawing through its cell —
 nothing to override. A table cell view changes `NSTableCellView` to `NSLayerBackedTableCellView`; its
 `directionalLayoutMargins` keep laying out content configuration as before. An item changes
 `NSCollectionViewItem` to `NSLayerBackedCollectionViewItem` and drops its own `loadView()` when that
