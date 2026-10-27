@@ -61,7 +61,7 @@ final class DetailViewController: NSViewController {
 
 Also: `setViewControllers(_:animated:)`, `popToRootViewController(animated:)`,
 `setNavigationBarHidden(_:animated:)`, `navigationItem.leadingBarButtonItems`, and the delegate's
-`navigationController(_:didShow:animated:)`,
+`navigationController(_:didShow:)`,
 `navigationController(_:shouldBeginInteractivePopFrom:to:)` and
 `navigationController(_:animationControllerFor:from:to:)`.
 
