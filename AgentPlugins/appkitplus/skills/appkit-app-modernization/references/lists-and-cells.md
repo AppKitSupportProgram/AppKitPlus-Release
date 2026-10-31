@@ -439,8 +439,9 @@ Members on each host: `contentConfiguration`, `backgroundConfiguration`,
 
 **Replaces**: controls hand-built into cells and items — an info button, a checkmark image, a count
 label, a pop-up chevron, a leading status dot, a hover-revealed "…" button that rebuilds the row's
-context menu by hand, an info button that shows a popover — and the tracking areas that show them on
-hover.
+context menu by hand, an info button that shows a popover, a status symbol, a spinner or progress
+bar, an unread-count capsule, a switch, a −/+ stepper, a small button, a narrow slider — and the
+tracking areas that show them on hover.
 
 ```bash
 rg -l 'class \w+\s*:\s*NS(TableCellView|CollectionViewItem|CollectionViewListItem)' \
@@ -457,6 +458,19 @@ cell.accessories = [                                                    // leadi
     .detail(displayed: .whenHovered, popover: { _ in InfoViewController(item: item) }),
     .checkmark(options: .init(isHidden: !item.isChosen, reservedLayoutWidth: .standard)),
 ]
+
+cell.accessories = [                                                    // display only (0.20.0+)
+    .image(NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Secured")!),
+    .progress(download.fractionCompleted, style: .bar),                 // nil = spinner
+    .badge(count: mailbox.unreadCount),                                 // AppKit's menu-badge look
+]
+
+cell.accessories = [                                                    // controls (0.20.0+)
+    .switch(isOn: setting.isOn) { isOn in model.setOn(isOn, for: setting) },
+    .stepper(value: zoom, in: 25...400, step: 25, valueText: { "\(Int($0))%" }) { zoom = $0 },
+    .button(image: NSImage(systemSymbolName: "eject.fill", accessibilityDescription: "Eject")!) { eject() },
+    .slider(value: output.volume) { output.volume = $0 },
+]
 cell.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
 ```
 
@@ -471,6 +485,16 @@ receives an `NSViewAccessory.PopoverPresentation`: set `behavior` (default `.tra
 `contentSize` there, and keep it to `close()` the popover from its content.
 `.detail(displayed:options:actionHandler:)` stays for anything else, such as a sheet.
 
+`.image`, `.progress` and `.badge` (0.20.0+) only show something: a click on them reaches the
+row, and on an emphasized selection they turn the contrasting colour by themselves. Several of one
+kind may share a row. To move a progress on, assign `accessories` again with the new fraction — the
+view is updated in place.
+
+`.switch`, `.stepper`, `.button` and `.slider` (0.20.0+) are AppKit's own controls. Their
+closures run when the user acts on them, never when `accessories` is assigned again with other
+values: set the model in the closure and reassign from the model — the control is updated in place,
+so a slider being dragged is not interrupted.
+
 For an `NSCollectionViewListItem` set `item.accessories`. Placement relative to another accessory:
 `.trailing(at: NSViewAccessory.Placement.position(after: .checkmark()))`. `reservedLayoutWidth`
 lines the accessories up across rows.
@@ -478,7 +502,9 @@ lines the accessories up across rows.
 Objective-C: `NSViewAccessoryDetail` (`actionHandler`, `popoverContentViewControllerProvider`, which
 receives an `NSViewAccessoryPopoverPresentation`), `NSViewAccessoryCheckmark`,
 `NSViewAccessoryPopUpMenu`, `NSViewAccessoryActionMenu`, `NSViewAccessoryLabel`,
-`NSViewAccessoryCustomView`; `-[NSView setAccessories:]`.
+`NSViewAccessoryCustomView`; `NSViewAccessoryImage`, `NSViewAccessoryProgress`,
+`NSViewAccessoryBadge`, `NSViewAccessorySwitch`, `NSViewAccessoryStepper`, `NSViewAccessoryButton`,
+`NSViewAccessorySlider` (0.20.0+); `-[NSView setAccessories:]`.
 
 **Adopting**: delete the hand-built controls and their constraints; the cell content moves aside for
 the accessories on its own. Selection changes from a pop-up accessory arrive in

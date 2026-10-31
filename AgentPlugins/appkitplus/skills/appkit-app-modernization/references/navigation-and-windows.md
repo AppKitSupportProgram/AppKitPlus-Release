@@ -93,16 +93,14 @@ dismiss(detailViewController)
 present(detailViewController, animator: NSNavigationParallaxTransition.appStoreStyle())
 ```
 
-Inside a navigation stack, return an `NSViewControllerAnimatedTransitioning` from
-`navigationController(_:animationControllerFor:from:to:)`. Ready-made ones:
-`NSParallaxTransitionController` (the default), `NSNavigationParallaxTransitionController` (UIKit's
-look, with `transitionDuration`, `parallaxFactor`, `dimmingColor`, `edgeShadowWidth`),
-`NSZoomingCrossfadeTransitionController`, `NSIdentityTransitionController`. A custom animator
-implements `transitionDuration(using:)` and `animateTransition(using:)`, reads the two controllers
+Inside a navigation stack the controller animates push and pop itself, with UXKit's parallax, which
+also follows the trackpad swipe back. For a different animation, return your own
+`NSViewControllerAnimatedTransitioning` from `navigationController(_:animationControllerFor:from:to:)`:
+it implements `transitionDuration(using:)` and `animateTransition(using:)`, reads the two controllers
 with `viewController(forKey: .from)` / `.to`, and ends with `completeTransition(_:)`.
 
-**Adopting**: delete the custom animator class and use one of the above, or keep its animation code
-inside `animateTransition(using:)`.
+**Adopting**: keep a custom animator's code inside `animateTransition(using:)`, or delete the class and
+leave the delegate method out to get the built-in parallax.
 
 ## Drawers — `NSModernDrawer`
 

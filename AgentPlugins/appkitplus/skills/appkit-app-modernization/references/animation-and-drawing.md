@@ -3,7 +3,7 @@
 Block-based view animation, image and PDF renderers, UIKit-style path construction, and a
 lightweight label.
 
-## View animation — the `NSView.animate` family
+## View animation — the `NSView.animate` family (macOS 15)
 
 All of `UIView`'s static animation API: duration and delay, both spring models, keyframes,
 transitions, repeat, and the system delete animation.
@@ -66,7 +66,10 @@ Objective-C: `+animateWithDuration:animations:completion:`,
 `+performSystemAnimation:onViews:options:animations:completion:`, `+performWithoutAnimation:`.
 
 **Adopting**: replace the group or the hand-built `CAAnimation` with the matching call and delete any
-`view.animations[key]` entries it relied on. `NSAnimationContext` groups whose purpose is to switch
+`view.animations[key]` entries it relied on. Every method that animates is macOS 15 and later; in a
+project that deploys earlier, put the call under `if #available(macOS 15, *)` and keep the existing code
+in the `else` branch. `performWithoutAnimation`, `setAnimationsEnabled(_:)` and
+`inheritedAnimationDuration` have no such floor. `NSAnimationContext` groups whose purpose is to switch
 off AppKit's own animations (table-view inserts and moves, split views) are not view animations —
 leave them.
 

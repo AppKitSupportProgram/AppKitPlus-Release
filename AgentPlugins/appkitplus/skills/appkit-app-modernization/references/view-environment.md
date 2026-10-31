@@ -274,7 +274,7 @@ Objective-C: `@import AppKitPlus.SPI;` or `#import <AppKitPlus/AppKitPlusSPI.h>`
 
 **Adopting**: delete the KVC strings and the app's own declarations of these members; a sizing view
 kept only to call `fittingSize` at a width becomes one `systemLayoutSizeFitting` call on the view
-itself.
+itself (macOS 13.1).
 
 ## Effects — `NSEffectView`, `NSVisualEffect`, `NSGlassEffect`, `NSEffectHandler`
 

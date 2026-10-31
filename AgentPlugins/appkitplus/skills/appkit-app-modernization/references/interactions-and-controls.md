@@ -198,7 +198,7 @@ hide or cell reuse. Keep the resting appearance in the view's own setup — the 
 hover state changes. A table or collection cell that already has a `configurationUpdateHandler` reads
 hover from its configuration state instead ([lists-and-cells](lists-and-cells.md)).
 
-## Menu items filled on demand — `NSDeferredMenuItem`
+## Menu items filled on demand — `NSDeferredMenuItem` (macOS 14)
 
 A menu item that shows a disabled "Loading…" placeholder when its menu opens and is replaced in place
 by the items its provider delivers, synchronously or later.
@@ -238,7 +238,49 @@ final class DocumentPageViewController: NSViewController {
 
 **Adopting**: delete the menu delegate code that existed only to load items late.
 
-## Type to filter a menu — `NSMenu.filtersItemsWhileTyping` (0.16.0+)
+## Menu items with accessories beside their title — `NSAccessoryMenuItem` (0.20.0+)
+
+A menu item that keeps its title, subtitle, image, check mark, key equivalent and badge, and shows at the end of its
+row the same `NSViewAccessory` values a table cell takes — a switch, a stepper, a button, a slider, a lock image, a
+spinner, a badge, a view of yours — and a view of yours above or below the row, while it highlights and is chosen like
+the items around it.
+
+**Replaces**: an `NSMenuItem.view` that redraws the item's title, check mark, image and selection highlight by hand
+to put a control next to them, the way Finder's tag row does; `mouseUp(with:)` in a menu item's view calling
+`performActionForItem(at:)` and `cancelTracking()`; a label in the view kept in step with the item's title.
+
+```bash
+rg -n -e 'enclosingMenuItem' -e 'performActionForItem\(at' -e 'cancelTracking\(\)' -e 'selectedMenuItemTextColor' -e '\.view = '
+```
+
+```swift
+let wiFi = NSAccessoryMenuItem(title: "Wi-Fi", action: #selector(openNetworkSettings(_:)), keyEquivalent: "")
+wiFi.subtitle = "Home Network"
+wiFi.accessories = [.switch(isOn: wiFiModel.isOn) { wiFiModel.isOn = $0 }]  // assign again to show a new state
+
+let network = NSAccessoryMenuItem(title: "Café Guest", action: #selector(join(_:)), keyEquivalent: "")
+network.accessories = [.image(NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Secured")!)]
+
+let tags = NSAccessoryMenuItem(title: "Tags…", action: #selector(showTags(_:)), keyEquivalent: "")
+tags.accessoryView = TagColorRow()          // clicks on it stay its own
+tags.accessoryPlacement = .top              // .bottom (the default) or .top
+```
+
+Display-only accessories — `.image`, `.progress`, `.badge`, `.label`, `.checkmark` — take no clicks: a click on one
+chooses the item, and they turn white with the highlight. Controls keep their own clicks and neither choose the item
+nor close the menu; call `cancelTracking()` from one that should. `.whenHovered` means while the item is highlighted,
+by the pointer or the arrow keys. A menu shows no leading custom view, `.popUpMenu` or `.actionMenu`, and `.detail`
+calls its handler without a popover. The item's own `badge` is shown as AppKit shows it.
+
+Objective-C: `accessories` (an array of `NSViewAccessory`), `accessoryView`, `accessoryPlacement`
+(`NSAccessoryMenuItemPlacementBottom` / `Top`), `subtitle`.
+
+**Adopting**: put the title, subtitle, image and state back on the item; turn the controls beside the title into
+accessories — a view of your own becomes `.customView(configuration:)`, with `maintainsFixedSize: true` when its frame
+sizes it; keep a row of your own above or below as the `accessoryView`; delete the view's highlight drawing and the
+`mouseUp` that sent the action.
+
+## Type to filter a menu — `NSMenu.filtersItemsWhileTyping` (0.16.0+, macOS 15)
 
 Typing while a pop-up or context menu is open brings up a search field at the top of the menu, and the
 menu keeps only the items with a word beginning with the typed text — the menus of Xcode's jump bar.
@@ -255,7 +297,8 @@ let menu = NSMenu()
 menu.filtersItemsWhileTyping = true    // and on each submenu that should filter as well
 ```
 
-Objective-C: `filtersItemsWhileTyping`. `NSPopUpPathControl` turns it on for every menu it opens.
+Objective-C: `filtersItemsWhileTyping`. `NSPopUpPathControl` turns it on for every menu it opens on macOS 15
+and later.
 
 **Adopting**: delete the search item and the key handling; leave the items as they are.
 
