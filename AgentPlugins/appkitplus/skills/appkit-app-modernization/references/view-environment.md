@@ -191,7 +191,7 @@ final class PhotoItem: NSLayerBackedCollectionViewItem {
 `layoutMargins`, `directionalLayoutMargins`, `preservesSuperviewLayoutMargins`,
 `insetsLayoutMarginsFromSafeArea`, `layoutMarginsDidChange()` — and no layer: `wantsLayer`,
 `wantsUpdateLayer` and the redraw policy stay AppKit's, so `draw(_:)` is called as on any `NSView`.
-`NSLayerBackedView`: all of those, inherited from `NSPlusView` (next release; earlier releases declare
+`NSLayerBackedView`: all of those, inherited from `NSPlusView` (0.18.0+; earlier releases declare
 them on `NSLayerBackedView` itself, with the same behaviour), plus `layerClass`. `NSIconView` and
 `NSObjectGridGraph` are `NSPlusView`s too (0.18.0+).
 `NSLayerBackedControl` (0.9.0+) and `NSLayerBackedTableCellView` (0.9.0+): the same members

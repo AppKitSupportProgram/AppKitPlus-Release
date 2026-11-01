@@ -1127,7 +1127,12 @@ rg -n -e 'sysctlbyname\("hw\.' -e 'machdep\.cpu\.brand_string' -e 'IOPlatformSer
 
 `NSDevice.current` hands out readings grouped by area (0.18.0+): `model`, `system`, `processor`,
 `memory`, `storage`, and `battery`, which is nil on a Mac without one. Each reading is immutable and read at
-one moment; `model` and `processor` are read once per process, the others again on every access.
+one moment; `model` and `processor` are read once per process, the others again on every access. In Swift
+each reading is a `Sendable` struct nested in `NSDevice` — `NSDevice.Battery`, `NSDevice.Drive` (0.21.0+;
+up to 0.20.0 they were classes, so code comparing readings with `===` or holding them as `AnyObject` needs
+rewriting). A type only one reading uses is nested in it: `NSDevice.Battery.ChargingPauseReason` (0.21.0+;
+`NSDevice.BatteryChargingPauseReason` up to 0.20.0), `NSDevice.Drive.SMARTStatus` and
+`NSDevice.Drive.Interconnect`.
 
 ```swift
 let device = NSDevice.current
@@ -1142,8 +1147,25 @@ if let battery = device.battery {
 the system holds the battery at a charge limit, which `isChargingPaused` and `chargingPauseReason` report.
 The battery also has `cycleCount`, `designCapacity` and `fullChargeCapacity` (mAh), `temperature`, `voltage`,
 `amperage`, `timeToEmpty`, `timeToFullCharge` and `adapterWattage`; `system` has `version`, `computerName`,
-`uptime` and `thermalState`; `model` has `serialNumber`, `icon` and `symbolName`; `processor` has
-`performanceCoreCount` and `efficiencyCoreCount`.
+`uptime` and `thermalState`, and `kernelVersion`, `bootVolumeName` and `isBootedInSafeMode` (0.21.0+);
+`model` has `serialNumber`, `icon` and `symbolName`, and `modelNumber`, `firmwareVersion`,
+`osLoaderVersion`, `hardwareUUID` and `isVirtualMachine` (0.21.0+); `processor` has
+`superCoreCount` (0.21.0+), `performanceCoreCount` and `efficiencyCoreCount`, which together make up
+`physicalCoreCount`; `memory` has `physicalMemory`, and `type` and `manufacturer` (0.21.0+).
+`graphicsProcessors` (0.21.0+) lists each GPU with its `name`, `vendorName`, `coreCount` and
+`isRemovable`; its `registryID` is the `MTLDevice.registryID` to look the Metal device up by.
+`displays` (0.21.0+) lists each online display with its `productName`, `vendorNumber`,
+`modelNumber`, `manufactureYear` / `manufactureWeek`, `nativePixelSize`, `isBuiltIn` and `edid`; its
+`displayID` reaches the `NSScreen` (`NSScreenNumber`) and the `CGDisplay…` functions for the rest.
+`drives` (0.21.0+) lists each drive with media — `name`, `revision`, `capacity`, `interconnect`
+(`.appleFabric`, `.pciExpress`, `.usb`…), `isInternal`, `isSolidState`, `supportsTRIM`,
+`smartStatus` (`.verified`, `.failing`, `.notSupported`, `.unknown`) — and its mounted `volumes`.
+`usbDevices` (0.21.0+) is the USB tree: each device's `name`, `vendorName`, `vendorID`,
+`productID`, `linkSpeed`, `allocatedCurrent` (mA) and `isRemovable`, with hubs' devices in `children`.
+`pciDevices` (0.21.0+) lists every PCI device but the bridges: the IDs, `classCode`, PCIe
+`linkSpeed` (GT/s) and `linkWidth`, `slotName`, `isBuiltIn` and `isTunnelled` (over Thunderbolt).
+`powerAdapter` (0.21.0+, nil without one) has the adapter's `name`, `manufacturer`, `watts`,
+`current` (mA), `serialNumber`, `hardwareVersion` and `firmwareVersion`.
 
 Up to 0.17.0 these were flat properties on `NSDevice` itself (`modelIdentifier`, `batteryLevel`,
 `batteryHealth`, `thermalState`, `diskAvailableCapacity`, …).
