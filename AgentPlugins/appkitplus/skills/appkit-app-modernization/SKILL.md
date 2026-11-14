@@ -1,6 +1,6 @@
 ---
 name: appkit-app-modernization
-description: Use when writing, reviewing or migrating AppKit UI code in a project that depends on AppKitPlus (`import AppKitPlus`, AppKitPlus-Release) — use its API instead of hand-rolling, and inventory legacy code for migration. Covers NSOutlineViewDiffableDataSource, NSTableViewDiffableReorderableDataSource, NSBrowserDiffableDataSource, cell registrations, NSListContentConfiguration, NSBackgroundConfiguration, NSViewAccessory, NSAction, control events, NSButton.Configuration, NSView.animate, NSTraitCollection, NSLayerBackedView, NSContentUnavailableConfiguration, NSTableViewController, NSHostingConfiguration, updateProperties, NSGraphicsImageRenderer, NSBezierPath/geometry helpers, NSEffectView, NSNavigationController, drag/drop interactions, NSCursorInteraction, NSHoverAppearanceInteraction, NSFindInteraction, NSScrollBehavior, NSScrollPagingInteraction, NSDeferredMenuItem, NSAccessoryMenuItem, NSPopUpPathControl, NSNavigationPopoverController, NSFilterSearchField/TokenField/ControlBar, NSIcon, NSObjectGridGraph.
+description: Use when writing, reviewing or migrating AppKit UI code in a project that depends on AppKitPlus (`import AppKitPlus`, AppKitPlus-Release) — use its API instead of hand-rolling, and inventory legacy code for migration. Covers NSOutlineViewDiffableDataSource, NSTableViewDiffableReorderableDataSource, NSBrowserDiffableDataSource, cell registrations, NSListContentConfiguration, NSBackgroundConfiguration, NSViewAccessory, NSAction, control events, NSButton.Configuration, NSView.animate, NSTraitCollection, NSLayerBackedView, NSContentUnavailableConfiguration, NSTableViewController, NSHostingConfiguration, updateProperties, NSGraphicsImageRenderer, NSBezierPath/geometry helpers, NSEffectView, NSNavigationController, drag/drop, NSCursorInteraction, NSFindInteraction, NSScrollBehavior, NSDeferredMenuItem, NSAccessoryMenuItem, NSPopUpPathControl, NSNavigationPopoverController, NSFilterSearchField/TokenField/ControlBar, NSFontTextField, NSStepperTextField, NSColorPickerPopUpButton, NSIcon, NSObjectGridGraph.
 ---
 
 # Modernising an AppKit App with AppKitPlus
@@ -29,7 +29,7 @@ The version is the `AppKitPlus-Release` pin in `Package.resolved`. New dependenc
 release, which is the release this skill describes:
 
 ```swift
-.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.21.0")
+.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.22.0")
 // target dependency: .product(name: "AppKitPlus", package: "AppKitPlus-Release")
 ```
 
@@ -132,6 +132,8 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | a hand-rolled view-controller stack on `transition(from:to:options:)`; custom back buttons | `NSNavigationController` + `navigationItem` / `NSBarButtonItem` | [navigation-and-windows](references/navigation-and-windows.md) |
 | pages on an `NSNavigationController` inset by hand for the navigation bar — `contentInsets` set from `topLayoutGuide.length`, content pinned to `topLayoutGuide` only to clear the bar | nothing: the bars are in the page's safe area, so `safeAreaLayoutGuide` and scroll views that adjust their insets clear them (0.7.0+) | navigation-and-windows |
 | hand-written `NSViewControllerPresentationAnimator` slides | `NSNavigationParallaxTransition`, the transition controllers | navigation-and-windows |
+| a navigation delegate returning a UIKit-style, slide or cross-fade animator for every push and pop | `preferredTransition = .navigationParallax` / `.slide` / `.zoomingCrossfade` on the pages (0.22.0+) | navigation-and-windows |
+| a page that grows out of the cell it was opened from: snapshot views animated between a grid item and a pushed page, a navigation delegate returning a hand-written zoom animator, trackpad code that shrinks the page back | `preferredTransition = .zoom { … }` on the pushed page (0.22.0+) | navigation-and-windows |
 | `NSDrawer` | `NSModernDrawer` | navigation-and-windows |
 | a welcome window shown from `applicationDidFinishLaunching`; `applicationShouldOpenUntitledFile` tricks | `NSDocumentController.launchOptions` + `NSDocumentViewController` / `NSDocumentWindowController` | navigation-and-windows |
 | `registerForDraggedTypes` + `NSDraggingDestination` overrides; `beginDraggingSession` from `mouseDragged` | `NSDropInteraction`, `NSDragInteraction`, `NSSpringLoadedInteraction` | [interactions-and-controls](references/interactions-and-controls.md) |
@@ -140,6 +142,7 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | `addCursorRect(_:cursor:)` in `resetCursorRects`; `NSCursor.set()` / `push()` from `mouseEntered` or `mouseMoved`; a `.cursorUpdate` tracking area | `NSCursorInteraction` (0.6.0+) | interactions-and-controls |
 | hover highlights on a hand-made `NSTrackingArea` — `mouseEntered` / `mouseExited` plus `updateTrackingAreas` | `NSHoverAppearanceInteraction` (0.6.0+) | interactions-and-controls |
 | snapping driven by `momentumPhase` or `didEndLiveScrollNotification` | `NSScrollBehaviorInteraction` + `NSScrollBehavior` | interactions-and-controls |
+| a nested `NSScrollView` whose `scrollWheel(with:)` hands the event to `nextResponder` or `enclosingScrollView` when it cannot scroll; an outer scroll view overriding `wantsForwardedScrollEvents(for:)` so the nested one gives scrolls up | `NSScrollView.forwardsScrollEventsAtEdges` (0.22.0+) | interactions-and-controls |
 | async menu loading in `menuNeedsUpdate` with a "Loading…" item | `NSDeferredMenuItem` (macOS 14) | interactions-and-controls |
 | an `NSMenuItem.view` that redraws the item's title, check mark and highlight by hand to put a switch, slider, lock, badge or colour row beside them; `mouseUp` in a menu item's view calling `performActionForItem(at:)` and `cancelTracking()` | `NSAccessoryMenuItem` with `accessories` (0.20.0+) | interactions-and-controls |
 | a search field put into an `NSMenu`, or key handling that hides menu items as the user types (`menuHasKeyEquivalent`, Carbon menu events, a `DVTFilteringMenu`-style subclass) | `NSMenu.filtersItemsWhileTyping` (0.16.0+, macOS 15) | interactions-and-controls |
@@ -151,6 +154,9 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | a find field that builds an `NSRegularExpression` from typed text by hand; "digits" or "any word" offered as options beside the field; a find and replace pair where the user types `$1` | `NSFindPatternSearchField` + `NSFindPatternComponents` (0.13.0+) | interactions-and-controls |
 | an `NSTextFinder` kept by hand; `performTextFinderAction(_:)` / `performFindPanelAction(_:)` overrides forwarding the sender's tag; an `NSTextFinderClient` with `stringAtIndex(_:effectiveRange:endsWithSearchBoundary:)`, `contentView(at:effectiveCharacterRange:)`, `rects(forCharacterRange:)` | `NSFindInteraction` + `NSTextProvidingFindSession` / `NSTextProviding`, or `NSTextSearchingFindSession` / `NSTextSearching` for content that searches itself (0.14.0+) | interactions-and-controls |
 | an `NSSlider` subclass or custom `NSSliderCell` drawing a thin progress track; a knob drawn over or hidden by hand; a progress bar animated to grow on mouse down; a SwiftUI `Slider` hosted only for a media time bar; an `NSProgressIndicator` with a click recognizer standing in for a playback scrubber | `NSPlaybackSlider` (0.18.0+) | interactions-and-controls |
+| a font shown in a text field beside a Fonts… button calling `orderFrontFontPanel(_:)`; `changeFont(_:)` overrides converting a selection's fonts; family and style pop-ups filled from `availableFontFamilies` with a size stepper | `NSFontTextField` + `convert(_:)` (0.22.0+) | interactions-and-controls |
+| an `NSButton` laid over a text field; an `NSTextFieldCell` subclass shrinking its text rect to make room for an image | `NSButtonTextField` (0.22.0+) | interactions-and-controls |
+| an `NSTextField` with an `NSStepper` beside it for one number; a `mouseDragged` override or pan recognizer changing a number while dragging over a label; a number formatter that evaluates typed arithmetic | `NSStepperTextField` (0.22.0+) | interactions-and-controls |
 | `target = self` / `action = #selector(…)` per control; closure trampolines | `NSAction` (`addAction`, `primaryAction`) | interactions-and-controls |
 | a graph of objects and their references drawn by hand — a custom view laying nodes out in columns with `CAShapeLayer` arrows; a web view running a JavaScript graph library | `NSObjectGridGraph`, the graph view of Xcode's Debug Memory Graph (0.15.0+) | interactions-and-controls |
 | an `NSObjectGridGraph` whose scrolling is rewritten by a `scrollWheel` override or an event monitor; zoom commands sent to it from hidden menu items or a `keyDown` override | `NSObjectGridGraph.interactionConfiguration`, `zoomToFit()`, `returnToHomePivot()` (0.16.0+) | interactions-and-controls |
@@ -159,6 +165,7 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | a second target or a block per control event — a hand-kept target list, a trampoline per `mouseDown` / `mouseUp` override | `NSControl.addAction(_:for:)` and the rest of `UIControl`'s event-handler API (0.7.0+) | interactions-and-controls |
 | imperative button styling (`bezelStyle`, `setButtonType`, `bezelColor`, `NSButtonCell` subclasses) | `NSButton.Configuration` | interactions-and-controls |
 | `NSDatePicker` in calendar style; hand-built day grids | `NSCalendarView` | interactions-and-controls |
+| an `NSColorWell` beside a pop-up of colour names; pop-up items carrying swatch images drawn by hand; a "Default" or "No Color" faked with a sentinel colour; `changeColor(_:)` overrides or colour panel observers guessing whether a change is theirs | `NSColorPickerPopUpButton` (0.22.0+) | interactions-and-controls |
 | `sysctlbyname("hw.model")`, IOKit battery or serial-number queries | `NSDevice.current` | interactions-and-controls |
 | `event.keyCode == 53`, `kVK_…` constants | `event.key?.keyCode` compared with `NSVirtualKey` | interactions-and-controls |
 

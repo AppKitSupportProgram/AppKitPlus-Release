@@ -75,6 +75,45 @@ swipe tracking. Rename the app's own view-controller properties that already use
 navigation API now provides (`navigationController`, `navigationItem`, `toolbarItems`, `toolbar`,
 `accessory`).
 
+## Zoom transition — `preferredTransition` (0.22.0+)
+
+iOS 18's zoom: set on a page, it makes `NSNavigationController` grow the page out of a view on the page
+underneath when pushing it, and shrink it back into that view when popping it. On the zoomed page the
+user can go back with the trackpad — two fingers toward the trailing edge or downward, or pinching in —
+and the page follows the fingers. Same spelling as UIKit's.
+
+**Replaces**: snapshot views animated between a grid item and a pushed page; a navigation delegate
+returning a hand-written zoom or hero animator; trackpad tracking that shrinks the page back.
+
+```bash
+rg -n -e 'animationControllerFor' -e 'snapshotView|cacheDisplay\(in' -e 'magnify\(with' -e 'hero'
+```
+
+```swift
+detailPage.preferredTransition = .zoom { context in
+    let detail = context.zoomedViewController as! DetailViewController
+    return gridPage.cellView(for: detail.itemIdentifier)   // asked again when the pop starts
+}
+navigationController.pushViewController(detailPage, animated: true)
+
+// Line a part of the page up with the cell, and keep the trackpad dismissal off while editing.
+let options = NSViewController.Transition.ZoomOptions()
+options.alignmentRectProvider = { context in (context.zoomedViewController as? DetailViewController)?.heroFrame }
+options.interactiveDismissShouldBegin = { _ in !detailPage.isEditing }
+detailPage.preferredTransition = .zoom(options: options) { _ in gridPage.selectedCellView }
+```
+
+The page's zoom comes before the navigation delegate, which is not asked for an animation or
+interaction controller for that push or pop. The trackpad dismissal is turned off only through
+`interactiveDismissShouldBegin` — not `interactivePopGestureRecognizer`. A push or pop that is not
+animated does not zoom.
+
+Objective-C: `+[NSViewControllerTransition zoomWithOptions:sourceViewProvider:]`,
+`NSZoomTransitionOptions`, `NSViewController.preferredTransition`.
+
+**Adopting**: delete the delegate's zoom animator and the snapshot code; set `preferredTransition` on
+the page before pushing it and return the cell from the provider.
+
 ## Transitions — `NSNavigationParallaxTransition` and the transition controllers
 
 **Replaces**: hand-written `NSViewControllerPresentationAnimator`s that slide a view controller in,
@@ -94,13 +133,25 @@ present(detailViewController, animator: NSNavigationParallaxTransition.appStoreS
 ```
 
 Inside a navigation stack the controller animates push and pop itself, with UXKit's parallax, which
-also follows the trackpad swipe back. For a different animation, return your own
-`NSViewControllerAnimatedTransitioning` from `navigationController(_:animationControllerFor:from:to:)`:
+also follows the trackpad swipe back. A page can prefer one of the navigation controller's other
+transitions (0.22.0+); it pushes and pops with it, and the delegate is not asked:
+
+```swift
+detailPage.preferredTransition = .navigationParallax   // UIKit's look
+// also .appStoreParallax, .slide, .zoomingCrossfade, and .parallax (the default)
+navigationController.pushViewController(detailPage, animated: true)
+```
+
+Objective-C: `+[NSViewControllerTransition navigationParallaxTransition]` and its siblings.
+
+For an animation of your own, return an `NSViewControllerAnimatedTransitioning` from
+`navigationController(_:animationControllerFor:from:to:)` for pages without a preferred transition:
 it implements `transitionDuration(using:)` and `animateTransition(using:)`, reads the two controllers
 with `viewController(forKey: .from)` / `.to`, and ends with `completeTransition(_:)`.
 
-**Adopting**: keep a custom animator's code inside `animateTransition(using:)`, or delete the class and
-leave the delegate method out to get the built-in parallax.
+**Adopting**: a delegate that only returned `NSNavigationParallaxTransitionController` (removed in 0.20.0) or a
+hand-written UIKit-style slide becomes `preferredTransition = .navigationParallax` on the pages; keep a
+genuinely custom animator's code inside `animateTransition(using:)`.
 
 ## Drawers — `NSModernDrawer`
 

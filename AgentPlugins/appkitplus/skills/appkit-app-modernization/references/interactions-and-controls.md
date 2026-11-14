@@ -162,6 +162,30 @@ Objective-C: `+pagingBehaviorWithOrientation:pagingOrigin:pageOffset:deceleratio
 
 **Adopting**: delete the snapping code and its observers.
 
+## Nested scroll views — `NSScrollView.forwardsScrollEventsAtEdges` (0.22.0+)
+
+A scroll view inside another one hands on the scroll events it can no longer use — scrolling down over a
+row that scrolls sideways, or on past the end of a nested text view — so the enclosing scroll view scrolls
+instead.
+
+**Replaces**: `scrollWheel(with:)` overrides that compare the deltas with the content's edges and call
+`nextResponder?.scrollWheel(with:)` or `enclosingScrollView?.scrollWheel(with:)`; outer scroll-view
+subclasses overriding `wantsForwardedScrollEvents(for:)`; key-value coding on the private
+`autoforwardsScrollWheelEvents` key.
+
+```bash
+rg -n -e 'nextResponder\??\.scrollWheel' -e 'nextResponder scrollWheel' -e 'enclosingScrollView\??\.scrollWheel' \
+   -e 'wantsForwardedScrollEvents' -e 'autoforwardsScrollWheelEvents'
+```
+
+```swift
+cardRowScrollView.forwardsScrollEventsAtEdges = true   // on the nested scroll view, not the page
+```
+
+Objective-C: `forwardsScrollEventsAtEdges`.
+
+**Adopting**: set it on the nested scroll view and delete the override with its edge checks.
+
 ## Cursors and hover — `NSCursorInteraction`, `NSHoverAppearanceInteraction` (0.6.0+)
 
 A view's cursor, and its hover highlight, each from one `addInteraction(_:)`.
@@ -350,7 +374,9 @@ func popUpPathControl(_ pathControl: NSPopUpPathControl, didSelect item: any NSP
 Return the same item objects every time — the path and the menus compare them by identity. Make
 `pathComponentName` and `pathComponentIcon` KVO-compliant (`@objc dynamic`) and the bar follows
 renames and icon changes by itself; call `invalidateContent()` after anything else changes, such as an
-item moving to another parent. `popUpMenuForComponent(at:)` opens a component's menu from a keyboard
+item moving to another parent. An SF Symbol icon is drawn the way Xcode's jump bar draws one (0.22.0+): configured at the
+control's font size and the Medium weight on top of the image's own configuration, so palette colours
+stay, and never cut at 16 points — pass the symbol itself, not a fixed-size copy. `popUpMenuForComponent(at:)` opens a component's menu from a keyboard
 shortcut. The delegate customises the menus: `menuItemFor:defaultMenuItem:`,
 `shouldSeparateDisplayOfChildItemsFor:` (inline children), `shouldEnableSelectionOf:`. Appearance:
 `lastComponentFillsWidth`, `wantsCapsuleHighlights`, `selectsComponentsOneAtATime`, `controlSize`.
@@ -622,6 +648,12 @@ Content that searches itself — millions of rows, pages loaded on demand, an ex
 `NSTextSearchingFindSession(searchableObject:)`; adopting `NSFoundTextLocating` as well lets the find bar mark the
 matches itself, otherwise the content decorates them in `decorate(foundTextRange:document:usingStyle:)`.
 
+In Swift, `NSTextProviding` is a Swift protocol whose optional members have default implementations (0.22.0+):
+the view of a string defaults to the interaction's view and a match is scrolled into view for you. A text field
+showing the string is measured for you; content drawn some other way adopts `NSProvidedTextLocating` and returns the
+rectangles of a range from `rects(for:)` (0.22.0+). `selectedProvidedTextRange` is `nil` when there is no
+selection, and `NSProvidedTextRange` is `Hashable` (0.22.0+).
+
 Also: `presentFindNavigator(showingReplace:)`, `dismissFindNavigator()`, `findNext()`, `findPrevious()`,
 `searchText`, `isFindNavigatorVisible` and `activeFindSession` on the interaction; `resultCount` and
 `highlightedResultIndex` on a session; `NSFindInteraction.rects(forCharacterRange:in:)` for ranges in text fields;
@@ -751,6 +783,114 @@ Put it on a dark backdrop, as Music's player is. Its frame is its alignment rect
 
 **Adopting**: delete the custom track drawing, the knob hiding and the press animation, and make the
 slider an `NSPlaybackSlider` — in a nib, setting the slider's class is enough; its cell follows.
+
+## Font fields — `NSFontTextField` (0.22.0+)
+
+The font field of Xcode's inspectors. It names the font it edits — "System Regular", "Text Style - Body",
+"Label 10", "Helvetica Neue 13", "Multiple Fonts at 13" for a selection — and the button at its end opens a
+popover with a menu of presets (the system font at its three sizes, the text styles, AppKit's interface
+fonts), the family, the style and the size, with Font Panel… to hand over to the shared font panel. Every
+change converts the field's fonts and sends its action once; in the action, convert each of your own fonts
+with `convert(_:)`, the way a text view handles `changeFont(_:)`. The field answers the font panel while it
+has the focus.
+
+**Replaces**: a text field showing `font.displayName` with a Fonts… button calling `orderFrontFontPanel(_:)`;
+`changeFont(_:)` overrides that convert a selection's fonts; `NSFontManager.shared.target` or
+`setSelectedFont(_:isMultiple:)` set by hand; family and style pop-ups filled from `availableFontFamilies` /
+`availableMembers(ofFontFamily:)` with a size field and stepper beside them.
+
+```bash
+rg -n -e 'orderFrontFontPanel' -e 'func changeFont' -e 'changeFont:' -e 'NSFontManager\.shared(FontManager)?\.(target|setSelectedFont)' \
+   -e 'availableFontFamilies' -e 'availableMembers\(ofFontFamily' -e 'availableMembersOfFontFamily'
+```
+
+```swift
+let fontField = NSFontTextField()
+fontField.controlSize = .small
+fontField.fontValues = selectedLabels.compactMap(\.font)   // one font, or one per selected object
+fontField.target = self
+fontField.action = #selector(fontFieldChanged(_:))
+
+@objc func fontFieldChanged(_ sender: NSFontTextField) {
+    for label in selectedLabels {
+        label.font = sender.convert(label.font ?? .systemFont(ofSize: 13))
+    }
+}
+```
+
+`fontValue` reads and writes a single font. Setting the fonts sends no action. Objective-C: `fontValues`,
+`-convertFont:`.
+
+**Adopting**: replace the font display and its Fonts… button with the field, move the per-object font
+changes into its action, and delete the `changeFont(_:)` override and the hand-built pop-ups.
+
+## Text fields with a button inside — `NSButtonTextField` (0.22.0+)
+
+A text field with one image button at its leading or trailing end. The button has its own target and
+action; the text, drawn and edited, keeps clear of it, the pointer over it is an arrow, and VoiceOver sees
+it as a button named by the image's accessibility description.
+
+**Replaces**: an `NSButton` added as a subview of a text field or laid over it with constraints; an
+`NSTextFieldCell` subclass shrinking `drawingRect(forBounds:)` or `titleRect(forBounds:)` to make room for an
+image; cursor rects patched to leave the button an arrow.
+
+```bash
+rg -n -e 'NSTextFieldCell' -e 'drawingRect\(forBounds' -e 'titleRect\(forBounds' -e 'addSubview\(.*[Bb]utton' -e 'resetCursorRects'
+```
+
+```swift
+let addressField = NSButtonTextField(string: "")
+addressField.image = NSImage(systemSymbolName: "arrow.right.circle", accessibilityDescription: "Open")
+addressField.imagePosition = .imageTrailing
+addressField.buttonTarget = self
+addressField.buttonAction = #selector(openAddress(_:))   // sent with the field as its sender
+```
+
+Objective-C: `image`, `imagePosition`, `buttonTarget`, `buttonAction`. Its cell, `NSButtonTextFieldCell`, is
+public for cell-based tables and for subclasses that move the button (`imageRect(forBounds:)`).
+
+**Adopting**: delete the overlaid button and the rect overrides, make the field an `NSButtonTextField` — in a
+nib, setting the field's class is enough; its cell follows — and move the button's action to `buttonAction`.
+
+## Number fields that drag and step — `NSStepperTextField` (0.22.0+)
+
+The number field of Xcode's inspectors. Dragging the number left or right changes it by 1% of the value the
+drag started from per point (100% with Option), clicking it edits it — typed arithmetic such as `2*8` is
+evaluated — and − and + buttons inside the field step it, as do ⌘⌥↑ and ⌘⌥↓ while it has the focus. Every
+change is clamped to the limits and sends the action, a drag on every event.
+
+**Replaces**: an `NSTextField` with an `NSStepper` beside it, kept in step by hand or through a shared binding;
+a `mouseDragged(with:)` override, an `NSPanGestureRecognizer` or a cursor rect turning a label into a scrubber;
+an `NSNumberFormatter` subclass that evaluates arithmetic or adds a unit to the displayed number.
+
+```bash
+rg -n -e 'NSStepper\b' -e 'NSPanGestureRecognizer' -e 'resizeLeftRight' \
+   -e 'func mouseDragged' -e 'NSExpression\(format' -e 'expressionWithFormat'
+```
+
+```swift
+let rotationField = NSStepperTextField(frame: NSRect(x: 0, y: 0, width: 86, height: 19))
+rotationField.controlSize = .small                 // also sets the monospaced-digit system font
+rotationField.minValue = -360
+rotationField.maxValue = 360                       // buttons step a hundredth of the range
+rotationField.doubleValue = shape.rotation
+rotationField.target = self
+rotationField.action = #selector(rotationChanged(_:))
+(rotationField.cell as? NSStepperTextFieldCell)?.suffix = "°"   // shown, not edited
+
+@objc func rotationChanged(_ sender: NSStepperTextField) {
+    shape.rotation = sender.doubleValue
+}
+```
+
+`increment` fixes the step; `integerValues` rounds every value; `hasButtons` hides − and +. For a selection
+whose values differ, set `objectValue = nil` and a placeholder, and `allowsUnsetValue` to let the user clear
+it — the action then reads `objectValue` as `nil`. Objective-C: `minValue`, `maxValue`, `increment`,
+`integerValues`, `allowsUnsetValue`, `hasButtons`; the cell's `prefix`, `suffix`.
+
+**Adopting**: replace the field and its stepper with one `NSStepperTextField` — in a nib, set the field's
+class; its cell follows and its formatter is kept — move both actions into the field's, and delete the drag
+handling and the formatter subclass.
 
 ## Choosers in a popover — `NSNavigationPopoverController` (0.18.0+)
 
@@ -1114,6 +1254,51 @@ func calendarView(_ calendarView: NSCalendarView, decorationFor dateComponents: 
 ```
 
 Selections arrive as `DateComponents` through the selection behaviour's delegate.
+
+## Named colour pop-ups — `NSColorPickerPopUpButton` (0.22.0+)
+
+The colour pop-up of Xcode's inspectors and Interface Builder. It shows the colour's swatch and name, and
+its menu offers a "Default", "No Color", "Multiple Values" for a selection that disagrees, a grid of the
+colours recently chosen anywhere in the app, the colours of the `NSColorList`s you give it under their
+names ("systemRedColor" reads "System Red Color"), and Custom…, which opens the shared colour panel and sends
+the action for every change made there. The panel passes between the button and your colour wells the way it
+passes between two wells. Option-drag the button to drag its colour out; drop a colour on it to choose that
+colour.
+
+**Replaces**: an `NSColorWell` with a pop-up of colour names beside it; an `NSPopUpButton` whose items carry
+swatch images drawn by hand; a "Default" or "No Color" entry faked with a sentinel colour;
+`changeColor(_:)` overrides, `NSColorPanel` targets or `NSColorPanel.colorDidChangeNotification` observers
+that guess whether the panel's change is theirs; a recent-colours list kept in user defaults by hand.
+
+```bash
+rg -n -e 'NSColorPanel' -e 'func changeColor' -e 'changeColor:' -e 'colorDidChangeNotification' \
+   -e 'NSColorWell' -e 'NSColorList' -e 'orderFrontColorPanel'
+```
+
+```swift
+let textColorPicker = NSColorPickerPopUpButton()
+textColorPicker.controlSize = .small
+textColorPicker.defaultColorMode = .color         // .noColor: "Default" stands for no colour
+textColorPicker.defaultColor = .labelColor
+textColorPicker.colorLists = [brandColors] + [NSColorList(named: "System")].compactMap { $0 }
+textColorPicker.color = label.textColor
+textColorPicker.target = self
+textColorPicker.action = #selector(textColorChanged(_:))
+
+@objc func textColorChanged(_ sender: NSColorPickerPopUpButton) {
+    label.textColor = sender.color ?? .labelColor   // nil: no colour, or "Default" in .noColor mode
+}
+```
+
+Set `isShowingMultipleValues` while the selected objects' colours differ; choosing a colour turns it
+off. `supportsNilColor` adds "No Color"; `colorSwatchAppearance` draws the swatches, and hands dynamic
+colours to the panel, in another appearance. Setting `color` sends no action. Objective-C: `color`,
+`defaultColorMode` (`NSColorPickerDefaultColorModeNone`, `…Color`, `…NoColor`), `showingMultipleValues`
+(getter `isShowingMultipleValues`).
+
+**Adopting**: replace the well and its names pop-up with the button, give it your colours as an
+`NSColorList`, move the colour changes into its action, and delete the `changeColor(_:)` override, the
+panel notification observers and the hand-kept recent colours.
 
 ## Device information — `NSDevice`
 

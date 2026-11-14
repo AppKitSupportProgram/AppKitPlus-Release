@@ -361,9 +361,14 @@ final class BadgeView: NSView {
 
 BadgeView.appearance().badgeColor = .systemOrange
 BadgeView.appearance(whenContainedInInstancesOf: [SidebarContainerView.self]).badgeColor = .secondaryLabelColor
+BadgeView.appearance(whenContainedInInstancesOf: [NSTableCellView.self, SidebarViewController.self])
+    .badgeColor = .tertiaryLabelColor
 ```
 
 Properties styled through a proxy are `@objc dynamic`. Set proxies at launch, before the views they
-style enter a window. Objective-C: `+appearance`, `+appearanceWhenContainedInInstancesOfClasses:`.
+style enter a window. Container classes are listed innermost first, as in UIKit. A view controller is a
+container too and contains its root view (0.22.0+). A setter with axes keeps one value per axis
+(`setWidth:forSegment:`), and a getter sent to a proxy reads back what was recorded. Objective-C:
+`+appearance`, `+appearanceWhenContainedInInstancesOfClasses:`.
 
 `NSView.appearance()` (the proxy) and `view.appearance` (the view's `NSAppearance`) are unrelated.
