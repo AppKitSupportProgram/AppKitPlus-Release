@@ -50,6 +50,33 @@ signs it into an application target automatically. If you integrate the `.xcfram
 instead, set it to **Embed & Sign** in your target's *Frameworks, Libraries, and Embedded Content*
 — linking without embedding builds fine and then fails at launch.
 
+## Agent Plugin
+
+The `appkitplus` plugin gives Claude Code and Codex the `appkit-app-modernization` skill, which
+writes and migrates AppKit code to use AppKitPlus. The plugin's version is the release it
+describes.
+
+Claude Code, in a session:
+
+```
+/plugin marketplace add AppKitSupportProgram/AppKitPlus-Release
+/plugin install appkitplus@appkitplus
+```
+
+Codex:
+
+```bash
+codex plugin marketplace add AppKitSupportProgram/AppKitPlus-Release
+codex plugin add appkitplus@appkitplus
+```
+
+To update after a release:
+
+```bash
+claude plugin marketplace update appkitplus && claude plugin update appkitplus@appkitplus
+codex plugin marketplace upgrade appkitplus
+```
+
 ## What's included
 
 Ports of UIKit's content configurations, background configurations, cell accessories, button
