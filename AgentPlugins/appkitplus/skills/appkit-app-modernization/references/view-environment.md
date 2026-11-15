@@ -237,6 +237,63 @@ Objective-C: `center`, `transform`, `contentMode`, `-bringSubviewToFront:`, `-se
 **Adopting**: delete the app's own `NSView` extensions that declare these names. Views placed by Auto
 Layout keep being moved through their constraints; `transform` is for visual effects.
 
+## Structured layout — `NSStructuredLayoutView` (0.23.0+)
+
+Frames set in code, in a pass AppKit runs after its own layout: each structured view gives its subviews the room
+they have, every subview lays itself out and settles its size, then the view places them and settles its own. A
+label's height for a width reaches its row, and the row's reaches the list, in the same pass — the layout Xcode's
+navigators, jump bar and tab bar are built with.
+
+**Replaces**: frame arithmetic in `layout()` or `resizeSubviews(withOldSize:)`; a parent that measures its labels with
+`sizeThatFits` or `preferredMaxLayoutWidth` after every change to work out its own size; constraints torn down and
+rebuilt to fit an icon, a wrapping title and trailing badges into a row.
+
+```swift
+final class IssueRowView: NSStructuredLayoutView {
+    let iconView = NSStructuredLayoutImageView()
+    let titleField = NSStructuredLayoutTextField(wrappingLabelWithString: "")
+    @NSView.Invalidating(.structuredLayout) var spacing: CGFloat = 4
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        addSubview(iconView)
+        addSubview(titleField)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    // Before the subviews lay themselves out: the room each one has.
+    override func configureSubviewsBeforeSubviewLayout() {
+        titleField.maximumAlignmentWidth = bounds.width - iconView.frame.width - spacing
+    }
+
+    // After: they have their sizes, so place them and settle this view's own.
+    override func positionSubviewsAndSizeSelfAfterSubviewLayout() {
+        iconView.setFrameOrigin(.zero)
+        titleField.setFrameOrigin(NSPoint(x: iconView.frame.maxX + spacing, y: 0))
+        setFrameSize(NSSize(width: bounds.width, height: max(iconView.frame.height, titleField.frame.height)))
+    }
+}
+```
+
+- **Invalidate** with `structuredLayoutState.invalidateLayout()`, or declare the property
+  `@NSView.Invalidating(.structuredLayout)`. A change of the view's frame size or bounds invalidates it by itself; a
+  parent follows a subview that sizes itself with `structuredLayoutState.invalidateLayout(onFrameChangesOf: subview)`.
+- **Order and interleave**: `subviewsOrderedForStructuredLayout()` lays out the subviews whose sizes are needed first,
+  and `willLayoutSubview(_:at:)` / `didLayoutSubview(_:at:)` run around each one — give the title the room the
+  badges left just before the title's turn. `didCompleteStructuredLayout()` runs once the whole tree is done.
+- **Text**: `NSStructuredLayoutTextField` wraps up to `maximumAlignmentWidth`, keeps exactly `fixedAlignmentWidth`, or
+  takes its text on one line; `fixedFrameHeight` overrides the height, and `explicitExpansionText` is what its
+  expansion tool tip shows over a truncated title. `NSStructuredLayoutImageView` sizes itself to its image.
+- **Any other view** — a table cell or row view, a control — adopts `NSStructuredLayoutViewProtocol`:
+  `lazy var structuredLayoutState = NSStructuredLayoutViewState(hostView: self)`, read once in `init`.
+- **With Auto Layout**: a structured view placed by constraints reports the height it needs as its
+  `intrinsicContentSize` and lays out only its subviews; a view laid out by constraints goes inside one through
+  `NSStructuredLayoutAutolayoutWrapperView(wrappedView:fixedWidth:fixedHeight:constraintPriority:)`.
+- **Now, not in the next pass** — to measure a view before showing it, or to settle a container before focusing
+  or snapshotting it: `structuredLayoutState.layoutIfNeeded()` on a structured view, and
+  `layoutStructuredSubtreeIfNeeded()` on any view, structured or not, in a window or not.
+
 ## AppKit's private `NSView` members — `import AppKitPlus.SPI` (0.15.0+)
 
 **Replaces**: a sizing view plus a temporary width constraint, laid out to read `fittingSize` at a given

@@ -1,6 +1,6 @@
 ---
 name: appkit-app-modernization
-description: Use when writing, reviewing or migrating AppKit UI code in a project that depends on AppKitPlus (`import AppKitPlus`, AppKitPlus-Release) — use its API instead of hand-rolling, and inventory legacy code for migration. Covers NSOutlineViewDiffableDataSource, NSTableViewDiffableReorderableDataSource, NSBrowserDiffableDataSource, cell registrations, NSListContentConfiguration, NSBackgroundConfiguration, NSViewAccessory, NSAction, control events, NSButton.Configuration, NSView.animate, NSTraitCollection, NSLayerBackedView, NSContentUnavailableConfiguration, NSTableViewController, NSHostingConfiguration, updateProperties, NSGraphicsImageRenderer, NSBezierPath/geometry helpers, NSEffectView, NSNavigationController, drag/drop, NSCursorInteraction, NSFindInteraction, NSScrollBehavior, NSDeferredMenuItem, NSAccessoryMenuItem, NSPopUpPathControl, NSNavigationPopoverController, NSFilterSearchField/TokenField/ControlBar, NSFontTextField, NSStepperTextField, NSColorPickerPopUpButton, NSIcon, NSObjectGridGraph.
+description: Use when writing, reviewing or migrating AppKit UI code in a project that depends on AppKitPlus (`import AppKitPlus`, AppKitPlus-Release) — use its API instead of hand-rolling, and inventory legacy code for migration. Covers NSOutlineViewDiffableDataSource, NSTableViewDiffableReorderableDataSource, NSBrowserDiffableDataSource, cell registrations, NSListContentConfiguration, NSBackgroundConfiguration, NSViewAccessory, NSAction, control events, NSButton.Configuration, NSView.animate, NSTraitCollection, NSLayerBackedView, NSStructuredLayoutView, NSContentUnavailableConfiguration, NSTableViewController, NSHostingConfiguration, updateProperties, NSGraphicsImageRenderer, NSBezierPath/geometry helpers, NSEffectView, NSNavigationController, drag/drop, NSCursorInteraction, NSFindInteraction, NSScrollBehavior, NSDeferredMenuItem, NSAccessoryMenuItem, NSPopUpPathControl, NSNavigationPopoverController, NSFilterSearchField/TokenField/ControlBar, NSFontTextField, NSStepperTextField, NSColorPickerPopUpButton, NSIcon.
 ---
 
 # Modernising an AppKit App with AppKitPlus
@@ -29,7 +29,7 @@ The version is the `AppKitPlus-Release` pin in `Package.resolved`. New dependenc
 release, which is the release this skill describes:
 
 ```swift
-.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.22.0")
+.package(url: "https://github.com/AppKitSupportProgram/AppKitPlus-Release", from: "0.23.0")
 // target dependency: .product(name: "AppKitPlus", package: "AppKitPlus-Release")
 ```
 
@@ -96,7 +96,8 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
       -e 'registerForDraggedTypes|beginDraggingSession\(with|momentumPhase|menuNeedsUpdate' \
       -e 'addCursorRect|resetCursorRects|NSTrackingArea\(|updateTrackingAreas' \
       -e '\.action\s*=\s*#selector|\.bezelStyle\s*=|setButtonType\(' \
-      -e 'documentView\s*=|NSScrollView\(\)|NSTableColumn\(identifier:|outlineTableColumn\s*='
+      -e 'documentView\s*=|NSScrollView\(\)|NSTableColumn\(identifier:|outlineTableColumn\s*=' \
+      -e 'resizeSubviews\(withOldSize:|resizeSubviewsWithOldSize:|preferredMaxLayoutWidth'
 ```
 
 ## Instead of this, use that
@@ -123,6 +124,7 @@ rg -n -e 'NSOutlineViewDataSource|NSTableViewDataSource|NSBrowserDelegate|NSTree
 | `NSVisualEffectView` / `NSGlassEffectView` behind `#available` branches | `NSEffectView` + `NSVisualEffect` / `NSGlassEffect` | view-environment |
 | a container that swaps its own backdrop view per style; a backdrop no stock effect covers | an `NSEffect` subclass + `NSEffectHandler` (`import AppKitPlus.NSEffectSubclass`), shown through `NSEffectView` | view-environment |
 | a sizing view plus a temporary width constraint to read `fittingSize` at a given width; KVC strings or bridging-header declarations reaching AppKit's private `NSView` members (`"ignoreHitTest"`) | `systemLayoutSizeFitting(_:withHorizontalFittingPriority:verticalFittingPriority:)` (macOS 13.1), `ignoreHitTest`, `mask`, … through `import AppKitPlus.SPI` (0.15.0+) | view-environment |
+| frames set by hand in `layout()` or `resizeSubviews(withOldSize:)`; a parent measuring its labels with `sizeThatFits` / `preferredMaxLayoutWidth` after every change to size itself; constraints rebuilt to fit a row's icon, wrapping title and badges | `NSStructuredLayoutView` with `NSStructuredLayoutTextField` / `NSStructuredLayoutImageView`, `@NSView.Invalidating(.structuredLayout)` (0.23.0+) | view-environment |
 | global styling singletons applied in `awakeFromNib` | `appearance()` proxies | view-environment |
 | `NSAnimationContext.runAnimationGroup` + `animator()`; hand-built `CABasicAnimation` / `CASpringAnimation` / `CATransition` on a view | the `NSView.animate` family (macOS 15) | [animation-and-drawing](references/animation-and-drawing.md) |
 | `NSImage.lockFocus`, `NSBitmapImageRep` + `NSGraphicsContext`, `CGPDFContextCreate` | `NSGraphicsImageRenderer`, `NSGraphicsPDFRenderer` | animation-and-drawing |
