@@ -1,7 +1,7 @@
 # Navigation and Windows
 
-A navigation stack with bars, view-controller transitions, a drawer that replaces `NSDrawer`, and the
-document launch window.
+A navigation stack with bars, view-controller transitions, a drawer that replaces `NSDrawer`, open and
+save panel configurations, and the document launch window.
 
 ## Navigation stack — `NSNavigationController`
 
@@ -153,6 +153,130 @@ with `viewController(forKey: .from)` / `.to`, and ends with `completeTransition(
 hand-written UIKit-style slide becomes `preferredTransition = .navigationParallax` on the pages; keep a
 genuinely custom animator's code inside `animateTransition(using:)`.
 
+### A custom animator that follows a gesture — `NSPercentDrivenInteractiveTransition` (0.24.0+)
+
+**Replaces**: gesture handlers that move the pages frame by frame for a custom push or pop and then animate the
+rest by hand; custom transitions that can only run on their own.
+
+Return `NSPercentDrivenInteractiveTransition` from the delegate while a gesture drives the transition, and feed
+it the gesture's progress. It works with an unchanged `animateTransition(using:)` that uses `NSView.animate`;
+`interruptibleAnimator(using:)` gives it an `NSViewPropertyAnimator` to scrub instead, which also keeps the
+animator's own timing for the finish.
+
+```swift
+final class NavigationDelegate: NSObject, NSNavigationControllerDelegate {
+    let interactor = NSPercentDrivenInteractiveTransition()
+    var gestureIsDriving = false
+
+    func navigationController(_ navigationController: NSNavigationController,
+                              animationControllerFor operation: NSNavigationTransitionOperation,
+                              from fromViewController: NSViewController,
+                              to toViewController: NSViewController) -> NSViewControllerAnimatedTransitioning? {
+        SlideAnimator(operation: operation)
+    }
+
+    func navigationController(_ navigationController: NSNavigationController,
+                              interactionControllerFor animationController: NSViewControllerAnimatedTransitioning)
+        -> NSViewControllerInteractiveTransitioning? {
+        gestureIsDriving ? interactor : nil
+    }
+}
+
+// In the gesture handler:
+//   began:   delegate.gestureIsDriving = true; navigationController.popViewController(animated: true)
+//   changed: delegate.interactor.update(progress)
+//   ended:   progress > 0.5 ? delegate.interactor.finish() : delegate.interactor.cancel()
+//            delegate.gestureIsDriving = false
+```
+
+Only plain and spring `NSView.animate` calls that `animateTransition(using:)` makes itself are scrubbed; keyframe
+and transition animations, `NSAnimationContext` groups and Core Animation run on their own. Alongside animations
+registered with the coordinator before the gesture starts move with it, and `isInterruptible` tells them apart.
+The finish runs over the rest of the duration divided by `completionSpeed`, on `timingCurve`, a set
+`completionCurve`, or a critically damped spring. A finish or cancel made while a page still prepares
+(`prepareForTransition(withContext:completion:)`) is applied when the transition starts; one made with no
+transition waiting does nothing.
+
+## Custom presentation — `presentAsCustom(_:)` and `NSPresentationController` (0.24.0+)
+
+**Replaces**: a card, panel or overlay added over the window's content by hand — with its own dimming view, a view
+that swallows clicks underneath and focus moved in and back — and hand-written `NSViewControllerPresentationAnimator`s
+that do the same; UIKit code that presents with `modalPresentationStyle = .custom` and a transitioning delegate.
+
+```bash
+rg -n -e 'NSViewControllerPresentationAnimator' -e 'addSubview\(.*(overlay|dimming|card)' -i
+```
+
+UIKit's custom presentation, presented the way AppKit presents a sheet: `presentAsCustom(_:)` sits beside
+`presentAsSheet(_:)`, AppKit records the presentation (`presentingViewController`, `presentedViewControllers`), and
+`dismiss(_:)` / `dismiss(_ sender:)` dismiss it. The presented view controller's `transitioningDelegate` supplies an
+`NSPresentationController` and the animators, with UIKit's method names.
+
+```swift
+final class CardTransitioningDelegate: NSObject, NSViewControllerTransitioningDelegate {
+    func presentationController(forPresented presented: NSViewController, presenting: NSViewController?,
+                                source: NSViewController) -> NSPresentationController? {
+        CardPresentationController(presentedViewController: presented, presenting: presenting)
+    }
+    func animationController(forPresented presented: NSViewController, presenting: NSViewController,
+                             source: NSViewController) -> (any NSViewControllerAnimatedTransitioning)? {
+        CardAnimator(isPresenting: true)    // adds view(forKey: .to) to containerView at finalFrame(for:)
+    }
+    func animationController(forDismissed dismissed: NSViewController) -> (any NSViewControllerAnimatedTransitioning)? {
+        CardAnimator(isPresenting: false)   // animates view(forKey: .from) away
+    }
+}
+
+final class CardPresentationController: NSPresentationController {
+    override var frameOfPresentedViewInContainerView: CGRect {
+        containerView?.bounds.insetBy(dx: 80, dy: 60) ?? .zero
+    }
+    override func presentationTransitionWillBegin() {
+        // add a dimming view to containerView; fade it with presentedViewController.transitionCoordinator
+    }
+}
+
+card.transitioningDelegate = cardTransitioningDelegate   // weak; keep it alive
+presentAsCustom(card)
+dismiss(card)
+```
+
+- With no delegate the presented view fills the window's content view and cross-fades in and out.
+- The container covers the window's content view; `shouldPresentInFullscreen` returning `false` covers only the
+  presenting view controller's view — one pane of a split view, say.
+- `interactionControllerForDismissal(using:)` can return an `NSPercentDrivenInteractiveTransition` for a dismissal that
+  follows a gesture; a cancelled one leaves the presentation as it was.
+- A dismissal that slides the presented view out of sight moves its layer with an explicit Core Animation animation and
+  leaves the frame where it is: AppKit stops drawing a view whose frame lies wholly outside a view that clips (split
+  views and the window frame do), so a frame animated past the edge loses its text on the way out. A percent-driven
+  interaction drives only `NSView.animate` frame changes; to make such a slide follow a gesture, return an interaction
+  controller of your own that pauses the container's layer time (`speed = 0`) and sets `timeOffset` from the gesture.
+- While a dismissal runs, AppKit has already cleared `presentingViewController`; `presentationController` and its
+  `presentingViewController` stay set until it ends.
+- Closing the window dismisses the presentation without animation.
+
+### A presentation that leaves the rest usable — `containerIgnoresMouseEvents` (0.24.0+)
+
+**Replaces**: an inline banner or toast added over an editor by hand — a view laid on top whose `hitTest(_:)` is
+overridden to let clicks through, and code that keeps or puts back the editor's focus.
+
+```swift
+final class BannerPresentationController: NSPresentationController {
+    override init(presentedViewController: NSViewController, presenting: NSViewController?) {
+        super.init(presentedViewController: presentedViewController, presenting: presenting)
+        containerIgnoresMouseEvents = true      // clicks, drags, scrolling outside the banner reach the editor
+    }
+    override var shouldPresentInFullscreen: Bool { false }           // cover only the editor
+    override var frameOfPresentedViewInContainerView: CGRect { /* top centre */ }
+}
+
+editorViewController.presentAsCustom(banner)                       // several at once stack
+```
+
+- Only what lands on the container itself passes; the presented view and views the presentation controller adds
+  (a dimming view) still take clicks.
+- No transition blocks input, and keyboard focus stays where it is.
+
 ## Drawers — `NSModernDrawer`
 
 `NSDrawer`'s command set on a modern child window, with configurable effect, shape and animation.
@@ -192,6 +316,57 @@ too. Objective-C: `+defaultConfiguration`, `+inspectorConfiguration` and the oth
 
 **Adopting**: rename per the table, keep the drawer in a stored property, and move drawers defined
 in a nib into code.
+
+## Open and save panels — `NSOpenPanel.Configuration` (0.24.0+)
+
+A panel's settings as a value you keep, copy and compare, with presets for the common tasks.
+`makePanel()` creates a panel with them; `apply(to:)` writes them to a panel you already have.
+
+**Replaces**: an `NSOpenPanel` or `NSSavePanel` configured property by property at every place it is
+shown.
+
+```bash
+rg -n -e 'NSOpenPanel\(\)' -e 'NSSavePanel\(\)' -e 'openPanel\]' -e 'savePanel\]' -e '\.(canChooseDirectories|canChooseFiles|allowedContentTypes|nameFieldStringValue|canCreateDirectories) = '
+```
+
+| Task | Preset |
+|---|---|
+| File > Open…, several documents | `NSOpenPanel.Configuration.documents(contentTypes:)` |
+| one file to import or attach | `.file(contentTypes:)` |
+| one folder | `.folder()` |
+| files and folders together | `.filesAndFolders(contentTypes:)` |
+| an application | `.application()` |
+| save a document of one type | `NSSavePanel.Configuration.document(contentType:)` |
+| export in one of several formats | `.export(contentTypes:)` — the format pop-up needs macOS 15 |
+
+```swift
+// Before
+let panel = NSOpenPanel()
+panel.canChooseDirectories = true
+panel.canChooseFiles = false
+panel.directoryURL = projectURL
+panel.message = "Choose the folder to export to."
+
+// After
+var configuration = NSOpenPanel.Configuration.folder()
+configuration.directoryURL = projectURL
+configuration.message = "Choose the folder to export to."
+let panel = configuration.makePanel()
+if await panel.beginSheetModal(for: window) == .OK, let folderURL = panel.url { … }
+```
+
+Keep a configuration shown in several places as a static property, and set what changes per use — the
+file name, the starting folder — on a copy. The settings keep AppKit's names. A `nil` setting, and
+`showsHiddenFiles = false`, leaves the panel's own value, so a configuration can be applied after other
+setup, and an `identifier` still restores the folder the user last used. The configuration sets
+`canChooseFiles` and `canChooseDirectories` itself, after the allowed types: set
+`canChooseDirectories = true` when the allowed types include folders. The panel's `delegate` and
+`accessoryView` are set on the panel after `makePanel()`. Objective-C: `NSOpenPanelConfiguration` and
+`NSSavePanelConfiguration`, `+folderConfiguration` and the other presets, `-makePanel`,
+`-applyToPanel:`.
+
+**Adopting**: move each panel's fixed settings into a configuration, delete the property-by-property
+setup, and present the panel `makePanel()` returns exactly as before.
 
 ## Document launch window — `NSDocumentController.launchOptions`
 
@@ -245,3 +420,35 @@ answers `undoManager` with the document's. Objective-C: `+[NSDocumentController 
 window controller, the `applicationShouldOpenUntitledFile` override and the `NSDocumentController`
 overrides that existed only for it. Code that created a blank document by calling
 `openUntitledDocumentAndDisplay(_:)` calls `newDocument(nil)` instead.
+
+## Debugging the responder chain — `NSResponderDebugPanel` (0.24.0+)
+
+A floating panel that shows how AppKit routes events and actions in the app, and never becomes the key or the main
+window, so showing it and clicking it leave the key window and its first responder as they were. Use it in place of
+`po [[NSApp keyWindow] firstResponder]` and hand-written `nextResponder` or `nextKeyView` walks.
+
+```swift
+// A Debug menu item, or a breakpoint action: `expr NSResponderDebugPanel.shared.orderFront(nil)`
+@objc func toggleResponderDebugPanel(_ sender: Any?) {
+    let panel = NSResponderDebugPanel.shared
+    if panel.isVisible { panel.orderOut(sender) } else { panel.orderFront(sender) }
+}
+
+// Trace an action no main menu item sends — a toolbar item's or a button's with a nil target
+NSResponderDebugPanel.shared.actionSelector = #selector(MyEditor.formatDocument(_:))
+```
+
+Its three sections:
+
+- **Chain** — the key window, the main window and the first responder, then every object AppKit asks for a nil-targeted
+  action in AppKit's order — the key window's chain with the window's delegate, window controller, content view
+  controller and document, the main window's chain, `NSApp` and its delegate, the shared document controller — with
+  the handler of the chosen action marked and the target `targetForAction(_:to:from:)` resolves. The pop-up lists the
+  main menu's nil-target actions; `actionSelector` traces any other.
+- **Key View Loop** — the views Tab visits from the first responder, with the reason each skipped view is passed over
+  (hidden, refuses first responder, needs Full Keyboard Access).
+- **Under Mouse** — the view a click at the pointer would hit and its superviews, outlined in its window.
+
+The `⋯` menu writes each section to the console. Objective-C: `NSResponderDebugPanel.sharedPanel`,
+`sharedPanelExists`, `actionSelector`. Check `sharedPanelExists` instead of reading `shared` where merely asking must
+not create the panel.

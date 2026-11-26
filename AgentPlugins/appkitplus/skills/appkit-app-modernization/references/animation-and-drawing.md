@@ -3,7 +3,7 @@
 Block-based view animation, image and PDF renderers, UIKit-style path construction, and a
 lightweight label.
 
-## View animation — the `NSView.animate` family (macOS 15)
+## View animation — the `NSView.animate` family (macOS 15; macOS 14 (0.24.0+))
 
 All of `UIView`'s static animation API: duration and delay, both spring models, keyframes,
 transitions, repeat, and the system delete animation.
@@ -66,12 +66,83 @@ Objective-C: `+animateWithDuration:animations:completion:`,
 `+performSystemAnimation:onViews:options:animations:completion:`, `+performWithoutAnimation:`.
 
 **Adopting**: replace the group or the hand-built `CAAnimation` with the matching call and delete any
-`view.animations[key]` entries it relied on. Every method that animates is macOS 15 and later; in a
-project that deploys earlier, put the call under `if #available(macOS 15, *)` and keep the existing code
-in the `else` branch. `performWithoutAnimation`, `setAnimationsEnabled(_:)` and
-`inheritedAnimationDuration` have no such floor. `NSAnimationContext` groups whose purpose is to switch
+`view.animations[key]` entries it relied on. Every method that animates works, and behaves the same, on
+macOS 14 (0.24.0+); with an earlier release it needs macOS 15, so a project pinned to one that deploys
+earlier puts the call under `if #available(macOS 15, *)` and keeps the existing code in the `else` branch.
+`performWithoutAnimation`, `setAnimationsEnabled(_:)` and `inheritedAnimationDuration` have no floor in any
+release. `NSAnimationContext` groups whose purpose is to switch
 off AppKit's own animations (table-view inserts and moves, split views) are not view animations —
 leave them.
+
+## Interruptible animation — `NSViewPropertyAnimator` (0.24.0+)
+
+An animation as an object: pause it, scrub it with `fractionComplete`, turn it around with
+`isReversed`, and resume it with other timing — typically a spring that carries a gesture's velocity.
+The port of `UIViewPropertyAnimator`, with the same names.
+
+**Replaces**: drag and scroll handlers that freeze a layer with `layer.speed = 0` and drive
+`timeOffset`; handlers that set frames on every event and then animate the rest of the way with a new
+`NSAnimationContext` group; per-gesture bookkeeping of where an interrupted animation was.
+
+```bash
+rg -n -e 'layer\??\.speed\s*=' -e '\.timeOffset\s*=' -e 'NSPanGestureRecognizer' -e 'func scrollWheel'
+```
+
+```swift
+let animator = NSViewPropertyAnimator(duration: 0.4,
+                                      timingFunction: CAMediaTimingFunction(name: .easeInEaseOut)) {
+    drawerView.frame.origin.x = 0
+}
+
+// gesture began / changed
+animator.pauseAnimation()
+animator.fractionComplete = startFraction + translation / travelDistance
+
+// gesture ended — velocity is in units of the remaining distance per second
+animator.isReversed = projectedFraction < 0.5
+animator.continueAnimation(
+    withTimingParameters: NSSpringTimingParameters(duration: 0.4, bounce: 0.1,
+                                                   initialVelocity: CGVector(dx: velocity / remainingDistance, dy: 0)),
+    durationFactor: 0)
+```
+
+Also `NSViewPropertyAnimator(duration:curve:animations:)`, `(springDuration:bounce:animations:)`,
+`(duration:dampingRatio:animations:)`, `(duration:timingParameters:)`,
+`runningPropertyAnimator(withDuration:delay:options:animations:completion:)`, `addAnimations(_:)`,
+`addCompletion(_:)`, `stopAnimation(_:)` + `finishAnimation(at:)`, `pausesOnCompletion`, `scrubsLinearly`.
+Objective-C: `-initWithDuration:timingFunction:animations:`, `-pauseAnimation`, `fractionComplete`,
+`-continueAnimationWithTimingParameters:durationFactor:`, `-stopAnimation:`, `-finishAnimationAtPosition:`.
+
+**Adopting**: keep a paused or stopped animator in a property — the framework holds it only while it
+runs. Animated properties are those a view's layer mirrors (frame, bounds, center, alpha, transform,
+layer colours, border, corner radius, shadow); constraint changes count when laid out inside the block.
+A stopped animator leaves views where they are drawn; a view placed by constraints goes back to its
+constraints on the next layout, so update them. Clicks during the animation hit the views' final frames.
+
+### Driving it with the trackpad — `NSAnimationScrubbingInteraction` (0.24.0+)
+
+Two-finger swipes, drags and, optionally, pinches over a view scrub an animator; letting go finishes it or
+sends it back, carrying the gesture's speed into a spring.
+
+**Replaces**: `scrollWheel(with:)` overrides and local event monitors that accumulate `scrollingDeltaX`,
+skip `momentumPhase` events and time the last deltas to get a velocity; pan-gesture handlers that decide
+by distance whether a drawer opens.
+
+```swift
+let interaction = NSAnimationScrubbingInteraction(direction: .left, distance: 320) { [unowned self] _ in
+    self.drawerAnimator()   // a new animator, or the one already running — it is caught where it is
+}
+containerView.addInteraction(interaction)
+interaction.inputs = [.scroll, .drag, .magnification]   // default: [.scroll, .drag]
+interaction.completionSpringBounce = 0.15
+```
+
+`direction` is the way the gesture moves to advance the animation — the way the fingers swipe whether natural
+scrolling is on or off — and `distance` the points that take it from start to end; the provider may set both
+for the animator it returns. A swipe that starts over a scroll view that can still scroll that way stays with
+the scroll view. Also: `magnificationDistance` (negative: pinching in advances), `completionSpringDuration`,
+`isScrubbing`, and `NSAnimationScrubbingInteractionDelegate` (`animationScrubbingInteractionShouldBegin(_:)`,
+`animationScrubbingInteraction(_:willFinishAt:)`).
 
 ## Image and PDF rendering — `NSGraphicsImageRenderer`, `NSGraphicsPDFRenderer`
 
@@ -253,3 +324,6 @@ titleLabel.preferredMaxLayoutWidth = 240
 ```
 
 Labels that users select, copy or edit, and labels built in Interface Builder, stay `NSTextField`.
+
+VoiceOver reads an `NSLabel` as static text whose value is its whole `text`, as it reads an `NSTextField`
+label; hide a decorative one with `label.setAccessibilityElement(false)` (0.24.0+).

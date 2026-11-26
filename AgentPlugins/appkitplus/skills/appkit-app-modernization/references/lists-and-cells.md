@@ -132,8 +132,9 @@ Objective-C: `reorderingHandlers`, `sortDescriptorsDidChangeHandler`,
 `-applySnapshotUsingReloadData:completion:`.
 
 **Adopting**: delete the drag and sort data source methods; the reorder handlers receive the
-before/after snapshots and a per-section transaction. To also accept drops from elsewhere, subclass
-and call `super` first.
+before/after snapshots and a per-section transaction. To also drag rows out or accept drops from
+elsewhere, set the table view's `dragDelegate` / `dropDelegate` (0.24.0+, see
+[interactions-and-controls](interactions-and-controls.md)); the reordering stays with the data source.
 
 ## Browsers — `NSViewBasedBrowser` + `NSBrowserDiffableDataSource`
 
@@ -281,6 +282,53 @@ Objective-C: `+registrationWithCellClass:configurationHandler:` (and `…CellNib
 `viewFor` into the handler. Registrations work in classic delegate methods too — a diffable data
 source is not required.
 
+## Updating content in place — reconfigure (0.24.0+)
+
+**Replaces**: `reloadData(forRowIndexes:columnIndexes:)`, `reloadItem(_:)` and `reloadItems(at:)` called only so that
+rows or items show their model's new values, and the `noteHeightOfRows(withIndexesChanged:)` that often follows them;
+`snapshot.reloadItems(_:)` called for the same reason.
+
+```bash
+rg -n -e 'reloadData\(forRowIndexes:' -e 'reloadItem\(' -e 'reloadItems\(at:' -e 'noteHeightOfRows\(withIndexesChanged:'
+rg -n -e 'reloadDataForRowIndexes:columnIndexes:|reloadItem:|reloadItemsAtIndexPaths:|noteHeightOfRowsWithIndexesChanged:'
+```
+
+```swift
+// The data source is asked for each row again and gets back the cell view it already shows.
+tableView.reconfigureRows(at: IndexSet(changedRows))
+tableView.reconfigureRows(at: IndexSet(changedRows), columnIndexes: IndexSet(integer: 1))
+outlineView.reconfigureItems([changedItem])
+collectionView.reconfigureItems(at: [IndexPath(item: 3, section: 0)])
+```
+
+The cell provider — or `tableView(_:viewFor:row:)`, `collectionView(_:itemForRepresentedObjectAt:)` — runs as it always
+does. Dequeuing through a registration, or with `makeView(withIdentifier:owner:)` / `makeItem(withIdentifier:for:)` and
+the identifier the cell was dequeued with, returns the existing cell instead of one from the reuse queue, without
+`prepareForReuse`: configure it and return it. The row keeps its selection and the first responder, and the cell keeps
+any state of its own. Rows and items that are not on screen are skipped; they are configured when they scroll in. With
+automatic row heights, or heights from the delegate, the rows are measured again; a self-sizing collection view item is
+measured again at the next layout pass.
+
+Objective-C: `-[NSTableView reconfigureRowsAtIndexes:]`, `-reconfigureRowsAtIndexes:columnIndexes:`,
+`-[NSOutlineView reconfigureItems:]`, `-[NSCollectionView reconfigureItemsAtIndexPaths:]`.
+
+**In a snapshot**: record the request on the snapshot, and the data source carries it out when it applies the snapshot.
+
+```swift
+var snapshot = dataSource.snapshot()
+snapshot.reconfigureItems([changedItem])
+dataSource.apply(snapshot)
+```
+
+`NSOutlineViewDiffableSectionDataSource` and `NSTableViewDiffableReorderableDataSource` reconfigure those items after the
+snapshot's other changes when the apply animates differences. AppKit's `NSTableViewDiffableDataSource` and
+`NSCollectionViewDiffableDataSource` reload them instead; with those, apply the snapshot and then call the view's method.
+Objective-C records the request with `-reconfigureItemsWithIdentifiers:` from `@import AppKitPlus.SPI;`.
+
+**Adopting**: replace each `reloadData(forRowIndexes:columnIndexes:)` + `noteHeightOfRows(withIndexesChanged:)` pair
+with one `reconfigureRows(at:)`. Keep reloading where a row needs a cell of another class or identifier: reconfigure
+raises when the provider dequeues another identifier or returns another cell.
+
 ## Cell content — `NSListContentConfiguration`
 
 **Replaces**: `cell.textField?.stringValue = …` / `cell.imageView?.image = …` in `viewFor`; cell
@@ -403,8 +451,10 @@ Background styles: `.clear()`, `.listCell()`, `.listHeader()`, `.listFooter()`. 
 State: every host's state has `isSelected`, `isHighlighted`, `isHovered`, `isDisabled`, `isFocused`,
 `dropState` / `isTargeted`, `dragState`, `traitCollection`, and custom keys through a subscript. Row and
 cell states add `isExpanded`, `isPreviousRowSelected`, `isNextRowSelected`, `isPinned`, `isSwiped`,
-`isReordering` (cells also `isEditing`); section headers add `isExpanded`. Values your app knows
-better — editing, reordering, dragging — go in by overriding `configurationState`:
+`isReordering` (cells also `isEditing`); section headers add `isExpanded`. `dragState` is `.dragging` for
+the rows of a drag a table or outline view with a `dragDelegate` or `dropDelegate` began (0.24.0+).
+Values your app knows better — editing, reordering, dragging elsewhere — go in by overriding
+`configurationState`:
 
 ```swift
 override var configurationState: NSTableCellViewConfigurationState {
@@ -514,7 +564,7 @@ screen while their menu or popover is open, and every clickable accessory is pub
 accessibility custom action of its cell — delete hand-written custom actions that duplicated them,
 and keep only the cell's own (they are listed first).
 
-## SwiftUI in cells — `NSHostingConfiguration` (macOS 13)
+## SwiftUI in cells — `NSHostingConfiguration`
 
 **Replaces**: an `NSHostingView(rootView:)` embedded in an `NSTableCellView` or
 `NSCollectionViewItem`, pinned with constraints and updated through `rootView` on reuse.

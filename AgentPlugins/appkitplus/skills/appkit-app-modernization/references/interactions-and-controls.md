@@ -57,9 +57,436 @@ Objective-C: `-initWithDelegate:`, `-[NSView addInteraction:]`,
 `-[NSDropSession loadObjectsOfClass:completion:]`, `-[NSSpringLoadedInteraction initWithActivationHandler:]`.
 
 **Adopting**: delete the view's `NSDraggingDestination` / `NSDraggingSource` overrides and its
-`registerForDraggedTypes` call once the interactions are in. Table, outline and collection views keep
-their data-source drag methods, or the diffable reordering handlers in
-[lists-and-cells](lists-and-cells.md).
+`registerForDraggedTypes` call once the interactions are in. Table and outline views take the
+delegates below instead of interactions; collection views keep their delegate's drag methods.
+
+### AppKit's own drag features (0.24.0+)
+
+What an `NSDraggingSession` or `NSDraggingInfo` did in the overrides being replaced has a place on the
+interactions:
+
+| AppKit, in the code being replaced | AppKitPlus |
+|---|---|
+| `NSDraggingItem.draggingFrame` / `imageComponentsProvider`, `NSTableCellView.draggingImageComponents` | `dragItem.previewProvider = { NSDragPreview(view: cellView) }` — or `NSDragPreview(image:frame:)`, `NSDragPreview(frame:imageComponentsProvider:)` |
+| `NSDraggingSession.draggingFormation`, `animatesToStartingPositionsOnCancelOrFail`, `draggingLeaderIndex` | the same properties on the drag session, settable while providing the items |
+| `ignoreModifierKeys(for:)` | `session.ignoresModifierKeys = true` |
+| `NSDraggingInfo.draggingSourceOperationMask` | `dropSession.draggingSourceOperationMask` |
+| `NSDraggingInfo.numberOfValidItemsForDrop` | `proposal.numberOfValidItemsForDrop` |
+| `NSDraggingInfo.draggingFormation` while over the view | `dropSession.draggingFormation` |
+| `updateDraggingItemsForDrag(_:)` | `dropInteraction(_:previewForHovering:session:)` |
+| `animatesToDestination` with frames set in `performDragOperation` | `dropInteraction(_:previewForDropping:session:)`, answered after `performDrop` |
+| anything else | `session.draggingSession` / `dropSession.draggingInfo` |
+
+```swift
+func dragInteraction(_ interaction: NSDragInteraction, itemsForBeginning session: any NSDragSession) -> [NSDragItem] {
+    session.draggingFormation = .list
+    return selectedCellViews.map { cellView in
+        let item = NSDragItem(itemProvider: NSItemProvider(object: cellView.objectValue as! NSURL))
+        item.previewProvider = { NSDragPreview(view: cellView) }
+        return item
+    }
+}
+
+func dropInteraction(_ interaction: NSDropInteraction, sessionDidUpdate session: any NSDropSession) -> NSDropProposal {
+    let operation: NSDragOperation = session.draggingSourceOperationMask.contains(.link) ? .link : .copy
+    let proposal = NSDropProposal(operation: operation)
+    proposal.numberOfValidItemsForDrop = importableCount(session.items)
+    return proposal
+}
+
+func dropInteraction(_ interaction: NSDropInteraction, previewForDropping item: NSDragItem, session: any NSDropSession) -> NSDragPreview? {
+    insertedRowView(for: item).map { NSDragPreview(view: $0) }
+}
+```
+
+A drop interaction takes a drag when its delegate's `dropInteraction(_:canHandle:)` says so; a drag it
+does not take reaches the view's own destination methods, so an interaction for images can sit on a text
+view that keeps taking text. Without `canHandle`, the interaction leaves to the view only drags that carry
+one of the view's own registered types and none of `supportedTypes`.
+
+The drag session's formation, leader, slide-back, modifier keys, `draggingSession`, the drop session's
+mask, formation and `draggingInfo`, the proposal's badge and a drag item's `previewProvider` work the
+same in the table, outline and collection view drag and drop delegates. The two preview questions are for
+the interactions; a table, outline or collection view lands a drop through its drop coordinator and
+shapes its images with preview parameters instead — see
+[Drop animations and preview parameters](#drop-animations-and-preview-parameters--drop_torow-nsdragpreviewparameters-next-release).
+
+Objective-C: `-[NSDragPreview initWithView:]`, `-initWithImage:frame:`,
+`-initWithFrame:imageComponentsProvider:`, `NSDragItem.previewProvider`,
+`-dropInteraction:previewForHoveringItem:session:`, `-dropInteraction:previewForDroppingItem:session:`.
+`-dragInteraction:previewForLiftingItem:session:` still works and is soft-deprecated: it can only drag
+one image over the whole view.
+
+## Table and outline drag and drop — `dragDelegate`, `dropDelegate` (0.24.0+)
+
+UIKit's `UITableView.dragDelegate` / `dropDelegate` on `NSTableView`, with rows in place of index paths,
+and the same pair addressed by item on `NSOutlineView`. Drag and drop no longer goes through the data
+source, so a diffable data source stays as it is. AppKit's own behaviour stays: the rows a drag picks
+up, the dragging image, the insertion line and row highlight, autoscrolling and spring loading.
+
+**Replaces**: data-source drag methods — `pasteboardWriterForRow` / `pasteboardWriterForItem`,
+`draggingSession(_:willBeginAt:…)`, `validateDrop`, `acceptDrop`, `setDropRow(_:dropOperation:)` /
+`setDropItem(_:dropChildIndex:)` — and the data-source subclasses written only to hold them.
+
+```bash
+rg -n -e 'pasteboardWriterFor(Row|Item)' -e 'validateDrop' -e 'acceptDrop' -e 'setDrop(Row|Item)' \
+      -e 'dragDelegate' -e 'dropDelegate'
+```
+
+```swift
+final class LibraryViewController: NSViewController, NSTableViewDragDelegate, NSTableViewDropDelegate {
+    private var dataSource: NSTableViewDiffableDataSource<Section, Song>!
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        dataSource = NSTableViewDiffableDataSource(tableView: tableView) { /* cells */ }
+        tableView.dragDelegate = self
+        tableView.dropDelegate = self
+    }
+
+    func tableView(_ tableView: NSTableView, itemsForBeginning session: any NSDragSession, row: Int) -> [NSDragItem] {
+        guard let song = dataSource.itemIdentifier(forRow: row) else { return [] }
+        return [NSDragItem(itemProvider: NSItemProvider(object: song.fileURL as NSURL))]
+    }
+
+    func tableView(_ tableView: NSTableView, dropSessionDidUpdate session: any NSDropSession,
+                   withDestinationRow destinationRow: Int) -> NSTableViewDropProposal {
+        NSTableViewDropProposal(operation: .copy, intent: .insertAtDestinationRow)
+    }
+
+    func tableView(_ tableView: NSTableView, performDropWith coordinator: any NSTableViewDropCoordinator) {
+        let row = coordinator.destinationRow
+        _ = coordinator.session.loadObjects(ofClass: NSURL.self) { urls in self.insertSongs(at: urls, before: row) }
+    }
+}
+```
+
+The drag delegate is asked once per dragged row — the clicked row, or the whole selection when the
+clicked row is selected — and AppKit drags one item per row, the first one returned. The intent says
+where the drop goes: `.insertAtDestinationRow` draws the insertion line, `.insertIntoDestinationRow`
+highlights the row, `.automatic` lets the table choose by the pointer's position, `.unspecified`
+highlights the whole table. The coordinator's `destinationRow` is the resolved row, and each item's
+`sourceRow` tells a drag from this table apart. An outline view's delegates adopt
+`NSOutlineViewDragDelegate` / `NSOutlineViewDropDelegate`, take the item under the pointer, and their
+coordinator gives `destinationItem` and `destinationChildIndex`.
+
+While either delegate is set, `tableView.dataSource` reads back an AppKitPlus object that forwards to
+yours; keep your own reference to the data source. Setting a drop delegate registers the common
+dragged types (strings, URLs, file URLs, TIFF, PNG, file promises); register any other with
+`registerForDraggedTypes(_:)`. A drag the data source accepts itself stays with it, so
+`NSTableViewDiffableReorderableDataSource` and `NSOutlineViewDiffableDataSource` keep reordering while the
+drop delegate takes drops from elsewhere; on the drag side their rows carry the delegate's item and the
+data source's own types together. While a drag the view began is in flight, `hasActiveDrag` is `true`
+and the dragged rows' cells and row views report `dragState == .dragging` in their configuration state.
+
+Objective-C: `dragDelegate`, `dropDelegate`, `dragInteractionEnabled`, `hasActiveDrag`, `hasActiveDrop`,
+`-tableView:itemsForBeginningDragSession:row:`, `-tableView:dropSessionDidUpdate:withDestinationRow:`,
+`-tableView:performDropWithCoordinator:`, `-outlineView:itemsForBeginningDragSession:item:`,
+`-outlineView:dropSessionDidUpdate:withDestinationItem:`, `-outlineView:performDropWithCoordinator:`,
+`-[NSTableViewDropProposal initWithDropOperation:intent:]`.
+
+**Adopting**: move the data-source drag methods into the two delegates, then delete them and any
+data-source subclass that existed only for them; delete the `registerForDraggedTypes` call for the
+common types.
+
+### Drop animations and preview parameters — `drop(_:toRow:)`, `NSDragPreviewParameters` (0.24.0+)
+
+UIKit's drop coordinator animations and preview parameters, on the table, outline and collection view
+delegates: a dropped item's image lands in the row it was inserted as, in part of an existing row, or
+anywhere in the window, and a row is dragged and dropped as the part of it you choose.
+
+**Replaces**: `enumerateDraggingItems(options:for:classes:searchOptions:using:)` in
+`draggingSession(_:willBeginAt:forRowIndexes:)` / `…forItems:` / `…forItemsAt:` to restyle the dragging
+images; `animatesToDestination` with frames and image components written in `acceptDrop`; in UIKit code,
+`coordinator.drop(_:toRowAt:)`, `drop(_:intoRowAt:rect:)`, `drop(_:to:)` and
+`dragPreviewParametersForRowAt` / `dropPreviewParametersForRowAt`.
+
+```swift
+func tableView(_ tableView: NSTableView, performDropWith coordinator: any NSTableViewDropCoordinator) {
+    let row = coordinator.destinationRow == -1 ? tableView.numberOfRows : coordinator.destinationRow
+    for (offset, dropItem) in coordinator.items.enumerated() {
+        names.insert(dropItem.dragItem.localObject as? String ?? "Untitled", at: row + offset)
+        tableView.insertRows(at: IndexSet(integer: row + offset), withAnimation: .effectFade)
+        coordinator.drop(dropItem.dragItem, toRow: row + offset)
+            .addCompletion { _ in tableView.scrollRowToVisible(row + offset) }
+    }
+}
+
+// The rows are dragged, and land, as rounded cards.
+func tableView(_ tableView: NSTableView, dragPreviewParametersForRow row: Int) -> NSDragPreviewParameters? {
+    cardParameters(for: tableView.rect(ofRow: row).size)
+}
+
+func tableView(_ tableView: NSTableView, dropPreviewParametersForRow row: Int) -> NSDragPreviewParameters? {
+    cardParameters(for: tableView.rect(ofRow: row).size)
+}
+
+func cardParameters(for rowSize: NSSize) -> NSDragPreviewParameters {
+    let parameters = NSDragPreviewParameters()
+    parameters.visiblePath = NSBezierPath(roundedRect: NSRect(origin: .zero, size: rowSize).insetBy(dx: 6, dy: 2),
+                                          xRadius: 8, yRadius: 8)
+    parameters.backgroundColor = .controlBackgroundColor
+    return parameters
+}
+```
+
+Call the coordinator's methods before `performDropWith` returns, after inserting the rows: AppKit reads
+where each image goes as the drop delegate returns, and runs its 0.3-second ease-out drop animation.
+`drop(_:toRow:)` turns the image into the row as it lands; `drop(_:intoRow:rect:)` scales it into a
+rect of the row's `NSTableRowView` — a folder row's icon; `drop(_:to:)` lands it in
+`NSDragPreviewTarget(container:frame:)` anywhere in the window, and the drop item's `previewSize` gives
+the frame the image's aspect ratio. Each returns an `NSDragAnimating`: `addAnimations(_:)` runs your
+changes alongside the drop animation, `addCompletion(_:)` runs when it ends. An item with no request
+disappears where it was dropped. A drop the drop delegate performs ends 0.3 seconds after it returns, so
+a drag delegate's `dragSessionDidEnd` comes that much later. The images move and scale; they do not
+rotate.
+
+Preview parameters are in the coordinate system of the row's `NSTableRowView` (a collection view item's
+`view`): `visiblePath` is the part that shows — the drag or landing image is the size of its bounds —
+and `backgroundColor`, clear by default, fills behind it. `NSDragPreviewParameters(textLineRects:)` outlines
+lines of text the way UIKit does, and `NSDragPreview(view:parameters:)` makes the same kind of preview for
+a drag interaction. A drag item's own `previewProvider` wins over the drag delegate's parameters for its row.
+
+An outline view's coordinator has `drop(_:toItem:)` and `drop(_:intoItem:rect:)`, and its delegates
+`outlineView(_:dragPreviewParametersForItem:)` / `outlineView(_:dropPreviewParametersForItem:)`.
+
+Objective-C: `-dropItem:toRow:`, `-dropItem:intoRow:rect:`, `-dropItem:toTarget:`, `-dropItem:toItem:`,
+`-dropItem:intoItem:rect:`, `previewSize`, `-tableView:dragPreviewParametersForRow:`,
+`-tableView:dropPreviewParametersForRow:`, `-outlineView:dragPreviewParametersForItem:`,
+`-outlineView:dropPreviewParametersForItem:`, `NSDragPreviewParameters`, `-[NSDragPreviewParameters
+initWithTextLineRects:]`, `-[NSDragPreview initWithView:parameters:]`,
+`-[NSDragPreviewTarget initWithContainer:frame:]`, `-[NSDragAnimating addAnimations:]`,
+`-addCompletion:`.
+
+**Adopting**: move the `enumerateDraggingItems` restyling into the two preview parameter methods or a
+`previewProvider`, and the `acceptDrop` frames into the coordinator's methods; delete the
+`animatesToDestination` assignment.
+
+### Drop placeholders — `drop(_:to:)` with a placeholder (0.24.0+)
+
+UIKit's drop placeholders on the table, outline and collection view drop delegates: when a dropped item's
+data arrives after `performDropWith` returns — a file promise, a download, a slow item provider — a
+placeholder row or item shows at the drop location at once, without touching your data source, and is
+replaced by the real row once the data is in.
+
+**Replaces**: inserting a dummy row into the model while the data loads and removing it again, or inserting
+nothing until the load finishes; in UIKit code, `coordinator.drop(_:to: UITableViewDropPlaceholder)` and
+`UICollectionViewDropPlaceholder`.
+
+```swift
+func tableView(_ tableView: NSTableView, performDropWith coordinator: any NSTableViewDropCoordinator) {
+    let row = coordinator.destinationRow == -1 ? documents.count : coordinator.destinationRow
+    for dropItem in coordinator.items {
+        let placeholder = NSTableViewDropPlaceholder(insertionRow: row, reuseIdentifier: .loadingCell, rowHeight: 0)
+        placeholder.cellUpdateHandler = { cellView in
+            guard let cellView = cellView as? NSTableCellView else { return }
+            var content = cellView.defaultContentConfiguration()
+            content.text = "Loading…"
+            cellView.contentConfiguration = content
+        }
+        let context = coordinator.drop(dropItem.dragItem, to: placeholder)
+        _ = dropItem.dragItem.itemProvider.loadDataRepresentation(for: .fileURL) { data, _ in
+            DispatchQueue.main.async {
+                guard let document = data.flatMap(Document.init(fileURLData:)) else {
+                    context.deletePlaceholder()
+                    return
+                }
+                context.commitInsertion { insertionRow in
+                    self.documents.insert(document, at: insertionRow)
+                }
+            }
+        }
+    }
+}
+```
+
+Inside `commitInsertion` insert one element into your model at `insertionRow`; the table view inserts the
+row itself. Inserting it yourself there — `insertRows(at:withAnimation:)`, or applying a diffable data
+source's snapshot that has the new item at that row — works too. `deletePlaceholder()` removes it, and both
+return `false` once the placeholder is gone. `setNeedsCellUpdate()` runs the handler again, to show
+progress. The context is an `NSDragAnimating`: the dropped image lands in the placeholder's cell view, or in
+the part `previewParametersProvider` leaves visible.
+
+While placeholders show, the table view's own rows — `numberOfRows`, `row(for:)`, `selectedRowIndexes`,
+`clickedRow` — count them; the rows you pass to `insertRows`, `removeRows`, `moveRow` and `reloadData(forRowIndexes:)`,
+and the rows your data source and delegate are asked about, are your data source's. Convert with
+`tableView.dataSourceRow(forPresentationRow:)` (`-1` for a placeholder) and
+`presentationRow(forDataSourceRow:)`; `hasUncommittedUpdates` says whether any placeholder shows. Your
+updates, a diffable data source's snapshots and `reloadData` keep each placeholder where it was. While a
+drop delegate is set, `tableView.delegate` reads back an AppKitPlus object as well; keep your own
+reference. The placeholder's cell view comes from `makeView(withIdentifier:owner:)` — an empty
+`NSTableCellView` with the identifier when nothing is registered — in `tableColumn`, the first by default.
+
+An outline view's placeholder is `NSOutlineViewDropPlaceholder(insertionChildIndex:ofItem:reuseIdentifier:rowHeight:)`,
+a child of `ofItem` (nil for the root) in the outline column; the placeholder object is its row's item, so
+`item(atRow:)` returns it. Its commit block gets a child index, and
+`presentationChildIndex(forDataSourceChildIndex:ofItem:)` / `dataSourceChildIndex(forPresentationChildIndex:ofItem:)`
+convert. A collection view's is `NSCollectionViewDropPlaceholder(insertionIndexPath:reuseIdentifier:)` —
+register the identifier first — with `presentationIndexPath(forDataSourceIndexPath:)` and
+`dataSourceIndexPath(forPresentationIndexPath:)`, and batch updates keep working around it.
+
+Objective-C: `-dropItem:toPlaceholder:`, `NSTableViewDropPlaceholder`, `NSOutlineViewDropPlaceholder`,
+`NSCollectionViewDropPlaceholder`, `-commitInsertionWithDataSourceUpdates:`, `-deletePlaceholder`,
+`-setNeedsCellUpdate`, `hasUncommittedUpdates`, `-presentationRowForDataSourceRow:`,
+`-dataSourceRowForPresentationRow:`, `-presentationChildIndexForDataSourceChildIndex:ofItem:`,
+`-presentationIndexPathForDataSourceIndexPath:`.
+
+**Adopting**: delete the dummy model entries and their cleanup; insert a placeholder per dropped item and
+commit it when the item's data has loaded.
+
+## Collection view drag and drop — `dragDelegate`, `dropDelegate` (0.24.0+)
+
+UIKit's `UICollectionView.dragDelegate` / `dropDelegate` on `NSCollectionView`, index paths and all, with
+the same shape as the table and outline delegates. Drag and drop no longer has to live in the collection
+view's delegate beside selection and the flow layout's sizes. AppKit's own behaviour stays: the items a
+drag picks up, the dragging image, the item highlight and the gap indicator, and autoscrolling.
+
+**Replaces**: `NSCollectionViewDelegate` drag methods — `collectionView(_:pasteboardWriterForItemAt:)`,
+`collectionView(_:draggingSession:willBeginAt:forItemsAt:)`, `collectionView(_:validateDrop:proposedIndexPath:dropOperation:)`,
+`collectionView(_:acceptDrop:indexPath:dropOperation:)` — when they exist only to drag items out or take drops in.
+
+```bash
+rg -n -e 'pasteboardWriterForItemAt' -e 'validateDrop' -e 'acceptDrop' -e 'proposedIndexPath' \
+      -e 'dragDelegate' -e 'dropDelegate'
+```
+
+```swift
+final class PhotosViewController: NSViewController, NSCollectionViewDragDelegate, NSCollectionViewDropDelegate {
+    private var dataSource: NSCollectionViewDiffableDataSource<Section, Photo>!
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        dataSource = NSCollectionViewDiffableDataSource(collectionView: collectionView) { /* items */ }
+        collectionView.dragDelegate = self
+        collectionView.dropDelegate = self
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, itemsForBeginning session: any NSDragSession,
+                        at indexPath: IndexPath) -> [NSDragItem] {
+        guard let photo = dataSource.itemIdentifier(for: indexPath) else { return [] }
+        return [NSDragItem(itemProvider: NSItemProvider(object: photo.fileURL as NSURL))]
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, dropSessionDidUpdate session: any NSDropSession,
+                        withDestinationIndexPath destinationIndexPath: IndexPath?) -> NSCollectionViewDropProposal {
+        NSCollectionViewDropProposal(operation: .copy, intent: .insertAtDestinationIndexPath)
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, performDropWith coordinator: any NSCollectionViewDropCoordinator) {
+        guard let indexPath = coordinator.destinationIndexPath else { return }
+        _ = coordinator.session.loadObjects(ofClass: NSURL.self) { urls in self.insertPhotos(at: urls, before: indexPath) }
+    }
+}
+```
+
+The drag delegate is asked once per dragged item — the clicked item, or the whole selection when the
+clicked item is selected — and AppKit drags one item per index path, the first one returned. The
+destination index path is the item under the pointer, or where AppKit would insert between items. The
+intent says where the drop goes: `.insertAtDestinationIndexPath` shows the gap indicator,
+`.insertIntoDestinationIndexPath` highlights the item, `.automatic` keeps AppKit's own choice (into an
+item, between items in a gap), `.unspecified` shows nothing and still performs the drop. Over an item,
+`.insertAtDestinationIndexPath` takes the gap on the nearer side of it. The coordinator's
+`destinationIndexPath` is the resolved index path — `nil` for `.unspecified` — and each item's
+`sourceIndexPath` tells a drag from this collection view apart. Over a section header or footer AppKit
+proposes no drop, and the drop delegate is not asked; a move AppKit sees as leaving the items where they
+are is not performed.
+
+While either delegate is set, `collectionView.delegate` reads back an AppKitPlus object that forwards to
+yours; keep your own reference to the delegate. Setting a drop delegate registers the common dragged
+types (strings, URLs, file URLs, TIFF, PNG, file promises); register any other with
+`registerForDraggedTypes(_:)`. A drag the collection view's own delegate accepts in its
+`validateDrop` stays with it. A drag the drag delegate provides may be copied into other applications
+unless `dragSessionIsRestrictedToDraggingApplication` answers `true`. While a drag the view began is in
+flight, `hasActiveDrag` is `true` and the dragged items report `dragState == .dragging`; AppKit hides
+those items until the drag ends, so a `.dragging` appearance does not show in a collection view.
+
+Objective-C: `dragDelegate`, `dropDelegate`, `dragInteractionEnabled`, `hasActiveDrag`, `hasActiveDrop`,
+`-collectionView:itemsForBeginningDragSession:atIndexPath:`,
+`-collectionView:dropSessionDidUpdate:withDestinationIndexPath:`, `-collectionView:performDropWithCoordinator:`,
+`-[NSCollectionViewDropProposal initWithDropOperation:intent:]`.
+
+A collection view lands drops the same way as a table view
+([Drop animations and preview parameters](#drop-animations-and-preview-parameters--drop_torow-nsdragpreviewparameters-next-release)),
+in index paths (0.24.0+): `coordinator.drop(_:toItemAt:)`, `drop(_:intoItemAt:rect:)` with the rect in
+the item's `view`, `drop(_:to:)`, the drop item's `previewSize`, and
+`collectionView(_:dragPreviewParametersForItemAt:)` / `collectionView(_:dropPreviewParametersForItemAt:)` in
+the item view's coordinate system. Apply the snapshot that inserts an item before `drop(_:toItemAt:)`.
+Objective-C: `-dropItem:toItemAtIndexPath:`, `-dropItem:intoItemAtIndexPath:rect:`, `-dropItem:toTarget:`,
+`-collectionView:dragPreviewParametersForItemAtIndexPath:`, `-collectionView:dropPreviewParametersForItemAtIndexPath:`.
+
+**Adopting**: move the delegate's drag and drop methods into the two new delegates, then delete them;
+delete the `registerForDraggedTypes` call for the common types and the
+`setDraggingSourceOperationMask(_:forLocal: false)` call that let items leave the app.
+
+## Browser drag and drop — `dragDelegate`, `dropDelegate` (0.24.0+)
+
+The same delegates on `NSBrowser`, shaped like the outline view's: a drag is asked for by item, and a drop
+is proposed against the item under the pointer and its column. The browser keeps `NSBrowserDiffableDataSource`
+or any delegate of yours, and AppKit's own behaviour stays: which rows a drag picks up, the insertion line,
+the row highlight and the column outline, opening a folder the pointer rests on, and scrolling sideways.
+The drop delegate works from macOS 14, the drag delegate from macOS 27; both need an item-based browser.
+
+**Replaces**: `NSBrowserDelegate` drag methods — `browser(_:pasteboardWriterForRow:column:)`,
+`browser(_:writeRowsWith:inColumn:to:)`, `browser(_:validateDrop:proposedRow:column:dropOperation:)`,
+`browser(_:acceptDrop:atRow:column:dropOperation:)` — when they exist only to drag rows out or take drops in.
+
+```bash
+rg -n -e 'pasteboardWriterForRow' -e 'writeRowsWith' -e 'validateDrop' -e 'acceptDrop' -e 'proposedRow' \
+      -e 'dragDelegate' -e 'dropDelegate'
+```
+
+```swift
+final class FoldersViewController: NSViewController, NSBrowserDragDelegate, NSBrowserDropDelegate {
+    private var dataSource: NSBrowserDiffableDataSource<Folder>!
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        dataSource = NSBrowserDiffableDataSource(browser: browser) { /* row views */ }
+        browser.dropDelegate = self
+        if #available(macOS 27, *) {
+            browser.dragDelegate = self
+        }
+    }
+
+    func browser(_ browser: NSBrowser, itemsForBeginning session: any NSDragSession, item: Any) -> [NSDragItem] {
+        guard let folder = item as? Folder else { return [] }
+        return [NSDragItem(itemProvider: NSItemProvider(object: folder.url as NSURL))]
+    }
+
+    func browser(_ browser: NSBrowser, dropSessionDidUpdate session: any NSDropSession,
+                 withDestinationItem destinationItem: Any?, inColumn column: Int) -> NSBrowserDropProposal {
+        NSBrowserDropProposal(operation: .copy, intent: .insertIntoDestinationItem)
+    }
+
+    func browser(_ browser: NSBrowser, performDropWith coordinator: any NSBrowserDropCoordinator) {
+        let parent = coordinator.destinationItem as? Folder
+        _ = coordinator.session.loadObjects(ofClass: NSURL.self) { urls in self.add(urls, to: parent) }
+    }
+}
+```
+
+`destinationItem` is the item in the row under the pointer — `nil` below a column's last row — and `column`
+is the column under the pointer, `-1` outside the columns. The intent says where the drop goes:
+`.insertIntoDestinationItem` highlights the row, or outlines the whole column below its last row and drops
+into the item that column shows the children of; `.insertAtDestinationChildIndex` draws an insertion line
+before or after the row; `.automatic` keeps AppKit's own choice; `.unspecified` outlines the whole browser.
+Outside the columns every intent is unspecified. The coordinator's `destinationItem` is the parent the new
+children go into, or the item dropped into; `destinationChildIndex` is the insertion index, `-1`
+otherwise; `destinationColumn` is the column, `-1` for unspecified; each item's `sourceItem` tells a drag
+from this browser apart. Reload the changed column, or apply a new snapshot, in `performDropWith`.
+
+While either delegate is set, `browser.delegate` reads back an AppKitPlus object that forwards to yours;
+keep your own reference to it. Setting the first delegate on a browser that already shows columns reloads
+them, keeping the selection: set the delegates before the browser first appears. A drag the browser's own
+delegate accepts in its `validateDrop` stays with it. A browser drag does not use a drag item's
+`previewProvider`, and has no drop animations or placeholders.
+
+Objective-C: `dragDelegate`, `dropDelegate`, `dragInteractionEnabled`, `hasActiveDrag`, `hasActiveDrop`,
+`-browser:itemsForBeginningDragSession:item:`, `-browser:dropSessionDidUpdate:withDestinationItem:inColumn:`,
+`-browser:performDropWithCoordinator:`, `-[NSBrowserDropProposal initWithDropOperation:intent:]`.
+
+**Adopting**: move the delegate's drag and drop methods into the two new delegates, then delete them;
+delete the `registerForDraggedTypes` call for the common types.
 
 ## Pasteboard values — `NSPasteboard.string`, `url`, `image`, `color` (0.7.0+)
 

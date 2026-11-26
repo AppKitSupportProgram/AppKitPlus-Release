@@ -148,9 +148,20 @@ rg -n -e 'wantsLayer\s*=\s*true' -e 'layerContentsRedrawPolicy' \
 final class CardView: NSLayerBackedView {
     override func updateLayer() {                     // draw here
         super.updateLayer()
-        layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        layer?.contents = renderedBadge
     }
 }
+
+// Corner radius, background, border and shadow are members of the view — not layer writes (0.24.0+).
+cardView.cornerRadius = 12
+cardView.cornerCurve = .continuous
+cardView.backgroundColor = .controlBackgroundColor   // dynamic colours follow the appearance
+cardView.borderColor = .separatorColor
+cardView.borderWidth = 1
+cardView.shadowProperties.opacity = 0.2
+cardView.shadowProperties.radius = 8
+cardView.shadowProperties.offset = CGSize(width: 0, height: -2)
+dividerView.borderPositions = [.bottom]               // some edges only
 
 final class DetailViewController: NSLayerBackedViewController {
     override class var viewClass: any NSLayerBackedViewProtocol.Type { CardView.self }
@@ -202,6 +213,24 @@ on an `NSControl` and an `NSTableCellView`. `NSPlusViewController` (0.18.0+): `v
 `layerBackedView` and `viewUpdateLayer()`; its `viewClass` is typed `any NSLayerBackedViewProtocol.Type`
 (0.8.0+; up to 0.7.0 it is `AnyClass`). The same members on an `NSCollectionViewItem` through
 `NSLayerBackedCollectionViewItem` (0.9.0+).
+
+**Appearance members** (0.24.0+), on `NSLayerBackedView`, `NSLayerBackedControl` and
+`NSLayerBackedTableCellView`: `cornerRadius`, `cornerCurve`, `backgroundColor`, `borderColor`,
+`borderWidth`, `borderPositions` (`NSLayerBackedView.BorderPositions`: `.left` `.right` `.top` `.bottom`
+`.all`, default `.all`), `borderLocation` (`.inside` — the default, what `CALayer`'s border draws —
+`.center`, `.outside`), `borderInsets`, and `shadowProperties` (the `NSShadowProperties` value type;
+the same shadow as `shadow`, which now sets it too). Use them instead of writing `layer?.…` from
+outside the view: AppKit keeps a view's corner radius, background, shadow and clipping itself and
+writes them back onto the layer whenever it refreshes it — a `layer?.shadowOpacity` set from outside
+returns to 0 at the next appearance change — and a `.cgColor` keeps the appearance it was taken in,
+where these resolve dynamic colours again when the appearance or the accent colour changes. Clipping
+stays `clipsToBounds`; a view with a shadow does not clip. A view that is not one of these classes
+— an `NSImageView`, an `NSVisualEffectView` — goes inside an `NSLayerBackedView` that carries the
+appearance, or keeps its own drawing.
+
+```bash
+rg -n -e 'layer\??\.(cornerRadius|cornerCurve|backgroundColor|borderWidth|borderColor|shadow\w+|masksToBounds)\s*='
+```
 
 **Adopting**: change the superclass, move drawing into `updateLayer()`, and delete the layer setup and
 the once-flags. A view that must keep drawing in `draw(_:)` derives from `NSPlusView` instead, and its
@@ -331,7 +360,7 @@ Objective-C: `@import AppKitPlus.SPI;` or `#import <AppKitPlus/AppKitPlusSPI.h>`
 
 **Adopting**: delete the KVC strings and the app's own declarations of these members; a sizing view
 kept only to call `fittingSize` at a width becomes one `systemLayoutSizeFitting` call on the view
-itself (macOS 13.1).
+itself.
 
 ## Effects — `NSEffectView`, `NSVisualEffect`, `NSGlassEffect`, `NSEffectHandler`
 
