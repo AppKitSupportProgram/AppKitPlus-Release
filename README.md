@@ -38,8 +38,9 @@ package or the product.
 
 | | |
 |---|---|
-| Platform | macOS 12.0 or later |
-| Architectures | `arm64`, `arm64e`, `x86_64` |
+| Platform | AppKitPlus: macOS 14.0 or later; UIKitPlus: iOS 17.0 or later, visionOS 1.0 or later |
+| Architectures | macOS: `arm64`, `arm64e`, `x86_64`; iOS and visionOS: `arm64`, plus `x86_64` in the simulators |
+| Xcode | 27.2 or later |
 | Swift | 5 language mode (built with library evolution enabled) |
 | Package manifest | swift-tools-version 5.9 (Xcode 15+) |
 
@@ -84,11 +85,34 @@ configuration, trait collection, navigation controller and bars, view controller
 diffable data sources for `NSOutlineView`, drag and drop interactions, graphics renderers, focus
 engine, document launch experience, and more.
 
+## UIKitPlus
+
+The package has a second product, **UIKitPlus**: the navigation popover, the pop-up path control, the
+filter fields with the filter control bar, and the icons, built for UIKit — iOS 17 and visionOS 1 or
+later; there is no Mac Catalyst slice. It is built from the same sources as AppKitPlus and released with
+it, so both products always carry the same version. The classes have the same names on iOS —
+`NSNavigationPopoverController`, `NSPopUpPathControl`, `NSFilterSearchField`, `NSFilterTokenField`,
+`NSFilterControlBar`, `NSIcon` and `NSIconView`; each header says where a class differs on iOS.
+
+```swift
+.target(name: "YourTarget", dependencies: [
+    .product(name: "UIKitPlus", package: "AppKitPlus-Release"),
+])
+```
+
+```swift
+import UIKitPlus
+```
+
+`UIKitPlus.framework` is a dynamic framework too; embed and sign it as described above. Swift Package
+Manager downloads both frameworks when it resolves this package, whichever product a target uses.
+
 ## Releases
 
 | Version | macOS | Swift | Built with |
 |---------|-------|-------|------------|
 | 0.1.0 | 12.0+ | 5 | Xcode 26.6 |
+| 0.24.0 | 14.0+ | 5 | Xcode 27.2 |
 
 A binary framework's `.swiftinterface` is not guaranteed to be readable by every future compiler,
 so the Xcode version each release was built with is recorded here.
